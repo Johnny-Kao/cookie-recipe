@@ -22,3 +22,7 @@ jobs:
         run: |
           php -l research/sighting_runtime_invariant.php
           php research/sighting_runtime_invariant.php build/Sighting.php
+      - name: Screen Sighting org filter undefined variable
+        run: |
+          php -l research/sighting_org_filter_runtime.php
+          php research/sighting_org_filter_runtime.php build/Sighting.php
