@@ -1,0 +1,41 @@
+name: Independent Redis UUID lookup research
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PHP Redis extension
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y php-cli php-redis
+      - name: Validate syntax
+        run: php -l benchmarks/redis_uuid_lookup.php
+      - name: Run synthetic scenarios
+        run: |
+          mkdir -p results
+          for scenario in "100 5" "1000 10" "1000 25" "5000 5"; do
+            set -- $scenario
+            HASHES=$1 SOURCES=$2 php benchmarks/redis_uuid_lookup.php | tee "results/redis-${1}-${2}.json"
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: synthetic-redis-benchmark
+          path: results/
+          if-no-files-found: warn
+          retention-days: 7
