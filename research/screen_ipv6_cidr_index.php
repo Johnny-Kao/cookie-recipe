@@ -39,9 +39,6 @@ PHP => <<<'PHP'
                         }
                     }
                 }
-                if ($match !== false) {
-                    break;
-                }
 PHP,
 ];
 foreach ($patches as $needle=>$replacement) {
