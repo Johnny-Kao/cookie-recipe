@@ -1,0 +1,99 @@
+name: MISP R1 CakePHP MariaDB integration
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  cake-db:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    services:
+      mariadb:
+        image: mariadb:10.11
+        env:
+          MARIADB_ROOT_PASSWORD: bar
+          MARIADB_DATABASE: misp
+          MARIADB_USER: misp
+          MARIADB_PASSWORD: blah
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mariadb-admin ping -h 127.0.0.1 -uroot -pbar"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=30
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: research
+      - name: Checkout pinned MISP source (ephemeral copy)
+        run: |
+          git clone --no-checkout --filter=blob:none https://github.com/MISP/MISP.git upstream
+          cd upstream
+          git checkout 04fc5f8b7ccb52bb6614ca3e9ccdbfdf6585d985
+          test "$(git rev-parse HEAD)" = 04fc5f8b7ccb52bb6614ca3e9ccdbfdf6585d985
+          git submodule update --init --recursive --depth 1
+      - name: Configure PHP and dependencies
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mysqli, pdo_mysql, mbstring, xml, dom, simplexml, curl, zip, redis, gd, apcu
+          ini-values: memory_limit=768M, display_errors=1, error_reporting=E_ALL
+          tools: composer:v2
+      - name: Install MISP Composer dependencies
+        working-directory: upstream/app
+        run: |
+          composer config --no-plugins allow-plugins.composer/installers true
+          composer install --no-interaction --no-progress --prefer-dist
+      - name: Initialize real CakePHP and MariaDB schema
+        working-directory: upstream
+        run: |
+          mysql -h 127.0.0.1 -u misp -pblah misp < INSTALL/MYSQL.sql
+          cp app/Config/bootstrap.default.php app/Config/bootstrap.php
+          cp app/Config/core.default.php app/Config/core.php
+          cp app/Config/config.default.php app/Config/config.php
+          cp build/database.php app/Config/database.php
+          cp build/email.php app/Config/email.php
+          mkdir -p app/tmp/cache/persistent app/tmp/cache/models app/tmp/logs
+          cp ../research/research/R1DbResearchShell.php app/Console/Command/R1DbResearchShell.php
+          mysql -h 127.0.0.1 -u misp -pblah misp <<'SQL'
+          INSERT INTO organisations (id,name,date_created,date_modified,uuid,local)
+            VALUES (9001,'R1 Research',NOW(),NOW(),'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',1);
+          INSERT INTO events (id,org_id,date,info,user_id,uuid,analysis,orgc_id,sharing_group_id,threat_level_id,distribution)
+            VALUES (9001,9001,CURDATE(),'R1 integration fixture',9001,'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',0,9001,0,2,0);
+          INSERT INTO attributes (id,event_id,category,type,value1,value2,uuid,sharing_group_id)
+            VALUES (9001,9001,'Network activity','ip-dst','192.0.2.23','','cccccccc-cccc-4ccc-8ccc-cccccccccccc',0),
+                   (9002,9001,'Network activity','ip-dst','192.0.2.24','','dddddddd-dddd-4ddd-8ddd-dddddddddddd',0);
+          INSERT INTO sightings (id,attribute_id,event_id,org_id,date_sighting,uuid,type)
+            VALUES (9001,9001,9001,9001,1780000000,'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',0);
+          SQL
+          php -l app/Console/Command/R1DbResearchShell.php
+      - name: Confirm original error through real CakePHP and DB
+        working-directory: upstream
+        run: |
+          app/Console/cake R1DbResearch original
+      - name: Install research-only minimal candidate inside ephemeral checkout
+        working-directory: upstream
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('app/Model/Sighting.php')
+          original=p.read_text()
+          old="$sighting = $all_sightings[0]['Sighting']['date_sighting'];\n            return $sighting;"
+          assert original.count(old)==1, 'R1 branch changed'
+          p.write_text(original.replace(old,'return empty($all_sightings) ? [] : $all_sightings[0];'))
+          PY
+          php -l app/Model/Sighting.php
+      - name: Verify repaired behavior through real CakePHP and DB
+        working-directory: upstream
+        run: |
+          app/Console/cake R1DbResearch fixed
