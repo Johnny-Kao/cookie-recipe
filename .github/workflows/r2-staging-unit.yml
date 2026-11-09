@@ -1,0 +1,34 @@
+name: R2 staging PHPUnit isolated regression
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  isolated-unit:
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.1', '8.3']
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          repository: Johnny-Kao/MISP
+          ref: staging/r2-sighting-org-id
+          submodules: recursive
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: mbstring, xml, dom, simplexml, curl, mysql, zip
+          tools: composer:v2
+      - name: Install upstream dependencies
+        working-directory: app
+        run: |
+          composer config --no-plugins allow-plugins.composer/installers true
+          composer install --no-interaction --no-progress --prefer-dist
+      - name: Execute R2 permanent regression test
+        run: |
+          php -l app/Test/SightingOrgIdTestFixture.php
+          php -l app/Test/SightingRestSearchOrgIdTest.php
+          ./app/Vendor/bin/phpunit --debug app/Test/SightingRestSearchOrgIdTest.php
