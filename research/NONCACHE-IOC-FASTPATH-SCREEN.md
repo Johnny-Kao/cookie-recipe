@@ -35,6 +35,25 @@ P1/P2 remain parked due to unresolved semantics of concurrent cache reads and pu
 - Interpretation: stable benefits for normal domains and URLs; modest benefit for the synthetic balanced mix. Already-short-circuited IP/hash paths do not benefit, and defanged patterns are slower. The next meaningful gate is a representative feed distribution and a low-cost profiling comparison, rather than another large candidate patch.
 - Other hotspots screened in the pinned source: `__resolveType()` already short-circuits clean IP/hash/email; `parseFreetext()` uses three regex passes and a split, but replacing them risks Unicode/control-character and quoted-token semantics. Do not propose reordering/resynthesis without profiling and full equality testing.
 
+## parseFreetext() cost screen (GC #42615493575)
+
+[GC #42615493575](https://github.com/Johnny-Kao/cookie-recipe/actions/runs/42615493575) completed SUCCESS on Redis 7 and Valkey 7.2 runners. Research-only profiling script: `research/profile_parse_freetext.php` (commit `0f33fd5`). No application patch.
+
+For 2,400 input lines per distribution, independently timed `parseFreetext()` against public `checkFreeText()` (14 repeats, median; same input and warmed functions):
+
+| Distribution | Split as % of full (two runners) | Split time per 2400 rows |
+| --- | ---: | ---: |
+| Domain | 2.79–2.82% | ~0.55 ms |
+| URL | 3.80–3.89% | ~0.96 ms |
+| Hash | 20.37–20.54% | ~1.83 ms |
+| IP | 14.71–15.69% | ~0.38–0.45 ms |
+| Defanged | 3.57% | ~0.78 ms |
+| Quoted | 2.40–2.43% | ~1.42 ms |
+| Noisy | 2.40–2.44% | ~1.96 ms |
+| Mixed | 3.57–3.60% | ~1.14 ms |
+
+**Decision:** Park generic split/Regex rewrite: it has a small cost share for domain, URL, noisy, quoted, and mixed feeds, while preserving Unicode, control-character, and quoted-token semantics is risky. Hash-heavy is an exception in percentage only: the absolute split cost remains ~1.83 ms/2400 rows. IP-heavy is similarly small in absolute cost. These independently timed ratios are *not instrumented inclusive call-graph shares* and are not projected speedups. There is no new validated patch candidate. Refang remains the only active candidate.
+
 ## Cost and opportunity
 
 Small, local PHP change; no new classes or dependencies in upstream; isolated research generator and regression script only. Potentially valuable on ordinary domain-heavy feeds. Caveats: some clean input types (IP) bypass refang already, and defanged input is marginally slower. Test more edge cases and verify PHP versions/whole-app integration before considering upstream.
