@@ -38,10 +38,13 @@ jobs:
           php -l research/measure_method.php
           php -l research/concurrency.php
           php -l research/benchmark_attachment.php
+          php -l research/property_cases.php
           php research/build_candidate.php build/upstream-Feed.php
           php -l build/extracted.php
       - name: Exact method behavior regression
         run: php research/regression.php
+      - name: Randomized behavioral equivalence
+        run: php research/property_cases.php
       - name: Strict concurrency and Redis command-order equivalence
         run: php research/concurrency.php
       - name: Measure extracted MISP method
