@@ -49,7 +49,7 @@ class RealSightingHarness extends Sighting {
     public array $sightingRows=[];
     public array $finds=[];
     public bool $reporter=true;
-    public function isReporter($eventId,$orgId):bool{return $this->reporter;}
+    public function hasAny($conditions):bool{return $this->reporter;}
     public function find($mode,$args=[]){
         $this->finds[]=['mode'=>$mode,'conditions'=>$args['conditions']??[]];
         if ($mode==='all')return $this->sightingRows;
