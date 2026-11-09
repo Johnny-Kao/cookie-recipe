@@ -97,3 +97,8 @@ jobs:
         working-directory: upstream
         run: |
           app/Console/cake R1DbResearch fixed
+      - name: Run upstream PHP lint and PHPUnit suite against patched checkout
+        working-directory: upstream
+        run: |
+          ./app/Vendor/bin/parallel-lint --exclude app/Lib/cakephp/ --exclude app/Vendor/ -e php,ctp app/
+          ./app/Vendor/bin/phpunit app/Test/

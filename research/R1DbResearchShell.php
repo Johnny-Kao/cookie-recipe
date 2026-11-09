@@ -76,6 +76,42 @@ class R1DbResearchShell extends AppShell
                 echo "PASS fixed other policy $policy\n";
             }
         }
+        Configure::write('Plugin.Sightings_policy', Sighting::SIGHTING_POLICY_SIGHTING_REPORTER);
+        require_once APP . 'Model' . DS . 'DecayingModelsFormulas' . DS . 'Base.php';
+        $formula = new R1IntegrationDecayFormula();
+        foreach (array(9001 => 1780000000, 9002 => 1770000000) as $attributeId => $expectedTimestamp) {
+            $attribute = array('id' => $attributeId, 'timestamp' => 1700000000, 'last_seen' => null);
+            try {
+                $score = $formula->computeCurrentScore($user, array(), $attribute, 42);
+                if ($mode === 'original') {
+                    throw new RuntimeException('Original computeCurrentScore unexpectedly succeeded');
+                }
+                $expected = time() - $expectedTimestamp;
+                if (abs($score['score'] - $expected) > 5 || $score['base_score'] !== 42) {
+                    throw new RuntimeException('Decay caller mismatch: '.json_encode($score).' expected elapsed '.$expected);
+                }
+                echo "PASS real Decay Score caller attribute=$attributeId\n";
+            } catch (TypeError $e) {
+                if ($mode !== 'original' || strpos($e->getMessage(), 'Return value must be of type array') === false) {
+                    throw $e;
+                }
+                echo "CONFIRMED original real Decay Score caller TypeError attribute=$attributeId\n";
+            }
+        }
         echo 'PASS R1 real CakePHP / MariaDB '.$mode."\n";
+    }
+}
+
+// Exercise the actual Base::computeCurrentScore() rather than only calling Sighting.
+require_once __DIR__ . '/../../Model/DecayingModelsFormulas/Base.php';
+class R1IntegrationDecayFormula extends DecayingModelBase
+{
+    public function computeScore($model, $attribute, $base_score, $elapsed_time)
+    {
+        return $elapsed_time;
+    }
+    public function isDecayed($model, $attribute, $score)
+    {
+        return false;
     }
 }
