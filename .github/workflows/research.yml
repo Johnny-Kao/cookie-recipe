@@ -23,8 +23,22 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y php-cli php-redis
-      - name: Validate syntax
-        run: php -l benchmarks/redis_uuid_lookup.php
+      - name: Fetch pinned upstream source (read only)
+        run: |
+          mkdir -p build
+          curl --fail --location --silent --show-error --retry 3 \
+            https://raw.githubusercontent.com/MISP/MISP/04fc5f8b7ccb52bb6614ca3e9ccdbfdf6585d985/app/Model/Feed.php \
+            -o build/upstream-Feed.php
+          test "$(git hash-object build/upstream-Feed.php)" = 1f6a9d8ab8b197a366e549333736a321348d8ed7
+      - name: Validate and build independent candidate
+        run: |
+          php -l benchmarks/redis_uuid_lookup.php
+          php -l research/build_candidate.php
+          php -l research/regression.php
+          php research/build_candidate.php build/upstream-Feed.php
+          php -l build/extracted.php
+      - name: Exact method behavior regression
+        run: php research/regression.php
       - name: Run synthetic scenarios
         run: |
           mkdir -p results
