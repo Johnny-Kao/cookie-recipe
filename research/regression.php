@@ -95,6 +95,17 @@ $data = [
     ['keys'=>['skip','ignore.invalid'], 'source_ids'=>[1]]
 ];
 compareCase($r, 'feed multi-source and duplicates', 'Feed', $feedSources, $attrs, $data, user());
+$prepopulated = $attrs;
+$prepopulated[0]['Feed'] = [
+    ['id'=>1, 'name'=>'previously attached'],
+    ['id'=>'2', 'name'=>'numeric string'],
+    ['id'=>null, 'name'=>'null id'],
+    ['name'=>'missing id']
+];
+compareCase($r, 'existing source IDs including numeric strings and null', 'Feed', $feedSources, $prepopulated, $data, user());
+$manyExisting = $attrs;
+$manyExisting[0]['Feed'] = array_merge([['id'=>1, 'name'=>'early match']], array_map(static fn($id) => ['id'=>$id], range(50, 150)));
+compareCase($r, 'early match in large existing source list', 'Feed', $feedSources, $manyExisting, $data, user());
 compareCase($r, 'feed permission denied', 'Feed', $feedSources, $attrs, $data, user(true, false));
 compareCase($r, 'feed no eligible attributes', 'Feed', $feedSources, [['type'=>'comment','value'=>'no']], $data, user());
 compareCase($r, 'feed no cache match', 'Feed', $feedSources, [['type'=>'domain','value'=>'no-match']], $data, user());

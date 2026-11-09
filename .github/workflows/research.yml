@@ -37,6 +37,7 @@ jobs:
           php -l research/regression.php
           php -l research/measure_method.php
           php -l research/concurrency.php
+          php -l research/benchmark_attachment.php
           php research/build_candidate.php build/upstream-Feed.php
           php -l build/extracted.php
       - name: Exact method behavior regression
@@ -47,6 +48,8 @@ jobs:
         run: |
           mkdir -p results
           php research/measure_method.php | tee results/extracted-method-measurement.json
+      - name: Repeated PHP-side attachment benchmark
+        run: php research/benchmark_attachment.php | tee results/attachment-benchmark.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
