@@ -45,6 +45,8 @@ jobs:
           php -l research/property_cases.php
           php -l research/redis_membership_batch_probe.php
           php -l research/build_batch_candidate.php
+          php -l research/build_freetext_candidate.php
+          php -l research/test_freetext.php
           php research/build_candidate.php build/upstream-Feed.php
           php -l build/extracted.php
       - name: Exact method behavior regression
@@ -68,6 +70,11 @@ jobs:
           MISP_EXTRACTED=batch-extracted.php php research/regression.php
           MISP_EXTRACTED=batch-extracted.php php research/property_cases.php
           MISP_EXTRACTED=batch-extracted.php php research/measure_method.php | tee results/membership-method-benchmark.json
+      - name: Freetext correlation research regression and timing
+        run: |
+          php research/build_freetext_candidate.php build/upstream-Feed.php
+          php -l build/freetext-extracted.php
+          php research/test_freetext.php | tee results/freetext-research.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
