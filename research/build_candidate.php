@@ -1,65 +1,42 @@
 <?php
 declare(strict_types=1);
 
-// Pin the upstream file and extract the actual function, not a reconstructed copy.
+// Extract the actual upstream method; produce a minimal no-cache candidate.
+// Redis calls and their order must remain EXACTLY the same.
 $src = file_get_contents($argv[1] ?? '');
-if ($src === false) { throw new RuntimeException('Missing upstream Feed.php'); }
+if ($src === false) {
+    throw new RuntimeException('Missing upstream Feed.php');
+}
 $start = strpos($src, '    public function attachFeedCorrelations(');
 $end = strpos($src, "\n    /**", $start);
-if ($start === false || $end === false) { throw new RuntimeException('Cannot locate upstream method'); }
+if ($start === false || $end === false) {
+    throw new RuntimeException('Cannot locate upstream method');
+}
 $baseline = substr($src, $start, $end - $start);
+
+// Avoid allocating an array_column() temporary for every source/attribute match.
+// Direct iteration preserves the original non-strict in_array() comparison semantics.
 $before = <<<'CODE'
-        foreach ($sources as $source) {
+                    $alreadyAttached = isset($attributes[$attributePosition][$scope]) &&
+                        in_array($sourceId, array_column($attributes[$attributePosition][$scope], 'id'));
 CODE;
 $after = <<<'CODE'
-        $eventUuidLookupCache = [];
-        foreach ($sources as $source) {
-CODE;
-if (substr_count($baseline, $before) !== 1) { throw new RuntimeException('Source loop changed'); }
-$candidate = str_replace($before, $after, $baseline);
-$before = <<<'CODE'
-                $pipe = $redis->pipeline();
-                $eventUuidHitPosition = [];
-                foreach ($hitIds as $sourceHitPos => $k) {
-                    if ($sourceHits[$sourceHitPos]) {
-                        $redis->smembers($cachePrefix . 'event_uuid_lookup:' . $hashTable[$k]);
-                        $eventUuidHitPosition[] = $redisResultToAttributePosition[$k];
-                    }
-                }
-                $mispFeedHits = $pipe->exec();
-CODE;
-$after = <<<'CODE'
-                $eventUuidHitPosition = [];
-                $lookupHashes = [];
-                $missingHashes = [];
-                foreach ($hitIds as $sourceHitPos => $k) {
-                    if ($sourceHits[$sourceHitPos]) {
-                        $hash = $hashTable[$k];
-                        $lookupHashes[] = $hash;
-                        $eventUuidHitPosition[] = $redisResultToAttributePosition[$k];
-                        if (!array_key_exists($hash, $eventUuidLookupCache)) {
-                            $missingHashes[$hash] = true;
+                    $alreadyAttached = false;
+                    if (isset($attributes[$attributePosition][$scope])) {
+                        foreach ($attributes[$attributePosition][$scope] as $existingSource) {
+                            if (is_array($existingSource) && array_key_exists('id', $existingSource) && $existingSource['id'] == $sourceId) {
+                                $alreadyAttached = true;
+                                break;
+                            }
                         }
                     }
-                }
-                if ($missingHashes) {
-                    $pipe = $redis->pipeline();
-                    foreach ($missingHashes as $hash => $_) {
-                        $redis->smembers($cachePrefix . 'event_uuid_lookup:' . $hash);
-                    }
-                    $loaded = $pipe->exec();
-                    foreach (array_keys($missingHashes) as $position => $hash) {
-                        $eventUuidLookupCache[$hash] = $loaded[$position];
-                    }
-                }
-                $mispFeedHits = [];
-                foreach ($lookupHashes as $hash) {
-                    $mispFeedHits[] = $eventUuidLookupCache[$hash];
-                }
 CODE;
-if (substr_count($candidate, $before) !== 1) { throw new RuntimeException('Target block changed'); }
-$candidate = str_replace($before, $after, $candidate);
+if (substr_count($baseline, $before) !== 1) {
+    throw new RuntimeException('Target expression changed upstream');
+}
+$candidate = str_replace($before, $after, $baseline);
+
 $out = "<?php\nclass BaselineFeed extends FeedHarnessBase {\n" . $baseline . "\n}\n"
      . "class CandidateFeed extends FeedHarnessBase {\n" . $candidate . "\n}\n";
 file_put_contents(__DIR__ . '/../build/extracted.php', $out);
-echo "Built exact-upstream baseline and isolated candidate\n";
+echo "Built exact-upstream baseline and strict Redis-order candidate\n";

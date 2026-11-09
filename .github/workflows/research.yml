@@ -41,19 +41,12 @@ jobs:
           php -l build/extracted.php
       - name: Exact method behavior regression
         run: php research/regression.php
-      - name: Demonstrate concurrent Redis update boundary
+      - name: Strict concurrency and Redis command-order equivalence
         run: php research/concurrency.php
       - name: Measure extracted MISP method
         run: |
           mkdir -p results
           php research/measure_method.php | tee results/extracted-method-measurement.json
-      - name: Run synthetic scenarios
-        run: |
-          mkdir -p results
-          for scenario in "100 5" "1000 10" "1000 25" "5000 5"; do
-            set -- $scenario
-            HASHES=$1 SOURCES=$2 php benchmarks/redis_uuid_lookup.php | tee "results/redis-${1}-${2}.json"
-          done
       - uses: actions/upload-artifact@v4
         if: always()
         with:
