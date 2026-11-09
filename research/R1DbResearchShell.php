@@ -79,7 +79,7 @@ class R1DbResearchShell extends AppShell
         Configure::write('Plugin.Sightings_policy', Sighting::SIGHTING_POLICY_SIGHTING_REPORTER);
         require_once APP . 'Model' . DS . 'DecayingModelsFormulas' . DS . 'Base.php';
         $formula = new R1IntegrationDecayFormula();
-        foreach (array(9001 => 1780000000, 9002 => 1770000000) as $attributeId => $expectedTimestamp) {
+        foreach (array(9001 => 1780000000, 9002 => 1700000000) as $attributeId => $expectedTimestamp) {
             $attribute = array('id' => $attributeId, 'timestamp' => 1700000000, 'last_seen' => null);
             try {
                 $score = $formula->computeCurrentScore($user, array(), $attribute, 42);
