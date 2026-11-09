@@ -129,6 +129,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME']) === __FILE__) {
 $results=[];
 try {
     $results[]=testCase('zero-hits',15,8,0,0,true,3);
+    $results[]=testCase('normal-preview-60',60,15,30,0,true,5);
     $results[]=testCase('admin-preview',100,15,30,0,true,5);
     $results[]=testCase('nonadmin-visibility',100,15,80,0,false,5);
     $results[]=testCase('high-hitrate',300,25,100,0,true,5);
