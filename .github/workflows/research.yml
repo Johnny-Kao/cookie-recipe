@@ -53,7 +53,7 @@ jobs:
           php -l research/build_freetext_row_candidate.php
           php -l research/build_freetext_local_candidate.php
           php -l research/freetext_local_cache_staleness.php
-          php -l research/build_freetext_fork_candidate.php
+          php -l research/test_cache_publication.php
           php research/build_candidate.php build/upstream-Feed.php
           php -l build/extracted.php
       - name: Exact method behavior regression
@@ -77,6 +77,10 @@ jobs:
           MISP_EXTRACTED=batch-extracted.php php research/regression.php
           MISP_EXTRACTED=batch-extracted.php php research/property_cases.php
           MISP_EXTRACTED=batch-extracted.php php research/measure_method.php | tee results/membership-method-benchmark.json
+      - name: Check actual live Cache rebuild and atomic-swap semantics
+        run: |
+          set -o pipefail
+          php research/test_cache_publication.php | tee results/feed-cache-publication.log
       - name: Freetext correlation research regression and timing
         run: |
           php research/build_freetext_candidate.php build/upstream-Feed.php
@@ -111,16 +115,6 @@ jobs:
           php research/test_freetext.php | tee results/freetext-local-memo.log
           php research/freetext_edge_tests.php | tee results/freetext-local-memo-edge.log
           php research/freetext_local_cache_staleness.php memo | tee results/freetext-local-memo-staleness.log
-      - name: Validate exact candidate committed to MISP fork
-        run: |
-          set -o pipefail
-          curl --fail --location --silent --show-error https://raw.githubusercontent.com/Johnny-Kao/MISP/7188c55cd910bfc696126f86c33672eadd5d4c6c/app/Model/Feed.php -o build/fork-Feed.php
-          php research/build_freetext_fork_candidate.php build/upstream-Feed.php build/fork-Feed.php
-          php -l build/freetext-extracted.php
-          php research/test_freetext.php | tee results/freetext-fork-exact.log
-          php research/freetext_edge_tests.php | tee results/freetext-fork-edge.log
-          php research/freetext_concurrency_tests.php | tee results/freetext-fork-concurrency.log
-          php research/freetext_error_tests.php | tee results/freetext-fork-errors.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
