@@ -18,6 +18,23 @@ P1/P2 remain parked due to unresolved semantics of concurrent cache reads and pu
 - Isolated private-method speed: clean strings ~1.9–2x, defanged ~0.92x. Do not claim this as total parsing improvement.
 - These are short GC measurements and synthetic indicator distributions, not measured whole MISP production traffic, not a formal proof for all Unicode/input data, and not full application integration.
 
+## Extended validation (GC #42614286613)
+
+[GC #42614286613](https://github.com/Johnny-Kao/cookie-recipe/actions/runs/42614286613): both Redis 7 and Valkey 7.2 jobs SUCCESS. Research-only commit `47d2464` adds `research/refang_extended_validation.php` and the workflow invocation; the candidate itself is unchanged.
+
+- Strict `__refangInput()` equivalence: **12,062 cases PASS**, including case variations, Unicode/full-width brackets, control characters, empty and long strings, overlapping defang patterns, and 12,000 seeded random strings.
+- Six separate `checkFreeText()` datasets (2,400 unique rows each): strict full-output equality PASS.
+- Interleaved ABBA timing, 16 samples/variant, median of middle two; **elapsed time reduction** (Redis 7 / Valkey 7.2):
+  - Domains: **14.72% / 14.04%**.
+  - Normal URLs: **11.18% / 10.64%**.
+  - Mixed (20% each of domain/URL/hash/IP/defanged): **6.42% / 5.19%**.
+  - IP: 0.38% / 0.57%.
+  - Hash: -0.38% / -0.19%.
+  - Defanged URL: **-2.09% / -2.48%** (regression).
+- Note: service labels identify GC matrix runners, **not a claim that Redis or Valkey changes parser speed**. No actual production IOC distribution, memory profile, or full MISP application integration is measured.
+- Interpretation: stable benefits for normal domains and URLs; modest benefit for the synthetic balanced mix. Already-short-circuited IP/hash paths do not benefit, and defanged patterns are slower. The next meaningful gate is a representative feed distribution and a low-cost profiling comparison, rather than another large candidate patch.
+- Other hotspots screened in the pinned source: `__resolveType()` already short-circuits clean IP/hash/email; `parseFreetext()` uses three regex passes and a split, but replacing them risks Unicode/control-character and quoted-token semantics. Do not propose reordering/resynthesis without profiling and full equality testing.
+
 ## Cost and opportunity
 
 Small, local PHP change; no new classes or dependencies in upstream; isolated research generator and regression script only. Potentially valuable on ordinary domain-heavy feeds. Caveats: some clean input types (IP) bypass refang already, and defanged input is marginally slower. Test more edge cases and verify PHP versions/whole-app integration before considering upstream.
