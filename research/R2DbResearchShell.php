@@ -111,6 +111,21 @@ class R2DbResearchShell extends AppShell
                 restore_error_handler();
             }
         }
+        // Real ACL regression: org B cannot read org A's event (distribution=0).
+        $restrictedUser = array('id'=>9102, 'org_id'=>9102, 'Role'=>array(
+            'id'=>1, 'perm_site_admin'=>false, 'perm_sync'=>false, 'perm_auth'=>true
+        ));
+        $aclInputs = array($a, 9101);
+        foreach ($aclInputs as $orgFilter) {
+            $tmp = $this->Sighting->restSearch($restrictedUser, 'json', array(
+                'org_id'=>$orgFilter, 'last'=>'365d'
+            ));
+            $payload = json_decode($tmp->intoString(), true);
+            if (!isset($payload['response']) || count($payload['response']) !== 0) {
+                throw new RuntimeException('R2 ACL regression: restricted user received '.json_encode($payload));
+            }
+            echo 'PASS R2 real ACL no-leak user=9102 org_filter='.json_encode($orgFilter)."\n";
+        }
         echo "PASS R2 DB result-gathering completed\n";
     }
 }
