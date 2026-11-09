@@ -50,6 +50,7 @@ jobs:
           php -l research/freetext_edge_tests.php
           php -l research/freetext_concurrency_tests.php
           php -l research/freetext_error_tests.php
+          php -l research/build_freetext_row_candidate.php
           php research/build_candidate.php build/upstream-Feed.php
           php -l build/extracted.php
       - name: Exact method behavior regression
@@ -82,6 +83,15 @@ jobs:
           php research/freetext_edge_tests.php | tee results/freetext-edge.log
           php research/freetext_concurrency_tests.php | tee results/freetext-concurrency.log
           php research/freetext_error_tests.php | tee results/freetext-faults.log
+      - name: Validate per-attribute pipeline option
+        run: |
+          set -o pipefail
+          php research/build_freetext_row_candidate.php build/upstream-Feed.php
+          php -l build/freetext-extracted.php
+          php research/test_freetext.php | tee results/freetext-row-benchmark.log
+          php research/freetext_edge_tests.php | tee results/freetext-row-edge.log
+          php research/freetext_concurrency_tests.php | tee results/freetext-row-concurrency.log
+          php research/freetext_error_tests.php | tee results/freetext-row-faults.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
