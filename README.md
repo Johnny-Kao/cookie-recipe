@@ -15,15 +15,16 @@ Upstream: https://github.com/MISP/MISP
 - Keep Feed and Server cache namespaces separate.
 - Maintain baseline and optimized output equivalence, including duplicate hash/attribute cases, URL stripping, composite types, and non-admin server restrictions.
 - Do not claim end-to-end speedup from a synthetic microbenchmark.
-- Keep this repo private between intentional GitHub Actions test windows; public exposure can be copied and is not reversible.
+- This repository is intentionally **public**. Keep all test data synthetic; do not commit secrets or confidential feeds.
 
 ## Research plan
 
 1. Pin an upstream revision and inspect existing tests and call sites.
 2. Reproduce Redis `SMEMBERS` duplication with a real ephemeral Redis instance.
 3. Build behavior-equivalence cases (including ACL and ordering).
-4. Implement a minimal bounded-cache candidate in independent research only.
-5. Measure commands, bytes, wall time and peak PHP memory (1k/5k/10k attributes; 5/25/100 sources).
+4. Compare the exact upstream function against a minimally changed, currently **unbounded** per-call cache candidate (done for synthetic fixtures).
+5. Address concurrent Redis cache updates, unbounded memory use, and real MISP integration before describing the candidate as production-safe.
+6. Measure repeated runs, bytes transferred, wall time and peak PHP memory at representative production-like sizes.
 6. Only after the comparison passes, consider a separate staging branch; upstream is out of scope for this research phase.
 
 Run GitHub Actions via `workflow_dispatch`. Results are saved as artifacts. The main branch never automatically publishes or opens PRs.

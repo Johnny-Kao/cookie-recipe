@@ -36,10 +36,13 @@ jobs:
           php -l research/build_candidate.php
           php -l research/regression.php
           php -l research/measure_method.php
+          php -l research/concurrency.php
           php research/build_candidate.php build/upstream-Feed.php
           php -l build/extracted.php
       - name: Exact method behavior regression
         run: php research/regression.php
+      - name: Demonstrate concurrent Redis update boundary
+        run: php research/concurrency.php
       - name: Measure extracted MISP method
         run: |
           mkdir -p results
