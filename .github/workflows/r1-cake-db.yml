@@ -97,6 +97,20 @@ jobs:
         working-directory: upstream
         run: |
           app/Console/cake R1DbResearch fixed
+      - name: Configure upstream GPG fixtures for PHP suite
+        working-directory: upstream
+        run: |
+          mkdir -m 700 -p .gnupg
+          gpg --batch --yes --pinentry-mode loopback --passphrase travistest --homedir "$PWD/.gnupg" --gen-key build/gpg
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('app/Config/config.php')
+          s=p.read_text()
+          old="'email'             => '',\n        'homedir'           => '',\n        'password'          => '',"
+          assert s.count(old)==1, 'GPG config shape changed'
+          new=f"'email'             => 'info@admin.test',\n        'homedir'           => '{Path.cwd()}/.gnupg',\n        'password'          => 'travistest',"
+          p.write_text(s.replace(old,new))
+          PY
       - name: Run upstream PHP lint and PHPUnit suite against patched checkout
         working-directory: upstream
         run: |
