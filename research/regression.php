@@ -14,12 +14,12 @@ class FeedHarnessBase {
     public $Attribute;
     private $redis;
     private $sources;
-    public function __construct(Redis $redis, array $sources) {
+    public function __construct($redis, array $sources) {
         $this->redis = $redis;
         $this->sources = $sources;
         $this->Attribute = new AttributeStub();
     }
-    public function setupRedisWithException(): Redis { return $this->redis; }
+    public function setupRedisWithException() { return $this->redis; }
     public function getCachedFeedsOrServers(array $user, string $scope): array { return $this->sources; }
 }
 require __DIR__ . '/../build/extracted.php';

@@ -35,10 +35,15 @@ jobs:
           php -l benchmarks/redis_uuid_lookup.php
           php -l research/build_candidate.php
           php -l research/regression.php
+          php -l research/measure_method.php
           php research/build_candidate.php build/upstream-Feed.php
           php -l build/extracted.php
       - name: Exact method behavior regression
         run: php research/regression.php
+      - name: Measure extracted MISP method
+        run: |
+          mkdir -p results
+          php research/measure_method.php | tee results/extracted-method-measurement.json
       - name: Run synthetic scenarios
         run: |
           mkdir -p results
