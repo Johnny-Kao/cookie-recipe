@@ -30,12 +30,12 @@ These figures do **not** establish production or statistically significant perfo
 
 ## Unresolved correctness and deployment risks
 
-1. **Concurrent Redis writes:** The original repeated `SMEMBERS` queries can observe updated sets between sources. An in-request cache can return older contents for the later source. If strict temporal consistency with baseline is required, this is a contract change. Existing cache refresh paths write/delete UUID lookup sets and must be audited.
+1. **Concurrent Redis writes — demonstrated divergence:** Run [#42553649025](https://github.com/Johnny-Kao/cookie-recipe/actions/runs/42553649025) injects a global UUID-set change between two source queries. The baseline sees the new UUID on the later source; the candidate reuses stale data. Thus the current candidate **does change observable behavior under concurrent updates** and must not be deployed under a strict equivalence requirement. Existing cache refresh paths write/delete UUID lookup sets and need a lifecycle audit.
 2. **Memory:** The candidate retains every previously seen UUID set for the remainder of this function call. When many hashes or large sets exist, PHP memory cost can grow. No safe bounded memory policy or representative worst-case fixture has been validated yet.
 3. **Harness limits:** This is the exact target function but in a minimal host harness with synthetic stubs for CakePHP models, source retrieval and role inputs. It is not a full MISP application test, nor an exhaustive check of all input permutations.
-4. **Order:** The function's iteration order is retained and checked for static fixtures, but concurrency and Redis set update behavior are not covered.
+4. **Order:** The function's iteration order is retained and checked for static fixtures. Redis mutation between reads is explicitly tested and currently differs.
 5. **Benchmark:** One run per dimension and many synthetic all-match cases bias results toward a cache win. Real-world hit distributions and repeated measurements remain necessary.
 
 ## Decision
 
-**HOLD** on upstream PR. The isolated optimization is behavior-equivalent on covered static cases and promising on limited performance measurements. Next gates: audit cache refresh lifecycle, design memory control, test concurrent writers, add randomized/realistic hit distributions and full MISP integration regression. An enhancement must not silently change visible results or ACLs.
+**HOLD** on upstream PR. The isolated optimization is behavior-equivalent on covered static cases and promising on limited performance measurements. Next gates: audit cache refresh lifecycle and define the required consistency contract, design memory control, add randomized/realistic hit distributions and full MISP integration regression. If strict behavior under concurrent writes is required, consider a different optimization scope rather than an in-request cross-source cache. An enhancement must not silently change visible results or ACLs.
