@@ -1,0 +1,498 @@
+# This is a basic workflow to help you get started with Actions
+
+name: MISP R2 staging full upstream CI
+
+# Controls when the action will run. Triggers the workflow on push or pull request
+# events but only for the 2.4 and develop branches
+on:
+  workflow_dispatch:
+
+# A workflow run is made up of one or more jobs that can run sequentially or in parallel
+jobs:
+  # This workflow contains a single job called "build"
+  build:
+    # The type of runner that the job will run on
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # 8.1 stays on jammy (libapache2-mod-php8.1 is in its default repos);
+        # 8.3's mod_php is only shipped by default on noble, so pin it to 24.04.
+        include:
+          - os: ubuntu-22.04
+            php: '8.1'
+          - os: ubuntu-24.04
+            php: '8.3'
+
+    # Run MariaDB as a service container (avoids docker client API mismatch in getong/mariadb-action)
+    services:
+      mariadb:
+        image: mariadb:10.11
+        env:
+          MARIADB_ROOT_PASSWORD: bar
+          MARIADB_DATABASE: misp
+          MARIADB_USER: misp
+          MARIADB_PASSWORD: blah
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mariadb-admin ping -h 127.0.0.1 -uroot -pbar"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=30
+
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=30
+
+      openldap:
+        image: bitnamilegacy/openldap:2.6.10-debian-12-r4
+        env:
+          LDAP_ADMIN_USERNAME: admin
+          LDAP_ADMIN_PASSWORD: password
+          LDAP_USERS: testuser
+          LDAP_PASSWORDS: userpassword
+          LDAP_ROOT: dc=example,dc=com
+          LDAP_ADMIN_DN: cn=admin,dc=example,dc=com
+          LDAP_USER_DN: ou=users,dc=example,dc=com
+        ports:
+          - 1389:1389
+          - 1636:1636
+        options: >-
+          --health-cmd="ldapsearch -x -H ldap://127.0.0.1:1389 -D cn=admin,dc=example,dc=com -w password -b dc=example,dc=com -s base"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=30
+
+
+    # Steps represent a sequence of tasks that will be executed as part of the job
+    steps:
+      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      - uses: actions/checkout@v5
+        with:
+          repository: Johnny-Kao/MISP
+          ref: staging/r2-sighting-org-id
+          submodules: 'recursive'
+
+      - name: Stop default MySQL (if present)
+        run: sudo service mysql stop || true
+
+      - name: Wait for MariaDB service
+        run: |
+          for i in {1..60}; do
+            mysqladmin ping -h 127.0.0.1 -uroot -pbar && exit 0
+            sleep 2
+          done
+          echo "MariaDB did not become ready in time"
+          exit 1
+
+      - name: Install redis-cli
+        env:
+          php_version: ${{ matrix.php }}
+        run: |
+          sudo apt-get -y update --allow-releaseinfo-change
+          sudo apt-get -y install redis-tools
+
+      - name: Wait for Redis service
+        run: |
+          for i in {1..60}; do
+            redis-cli -h 127.0.0.1 -p 6379 ping | grep -q PONG && exit 0
+            sleep 2
+          done
+          echo "Redis did not become ready in time"
+          exit 1
+
+      - name: Wait for OpenLDAP service
+        run: |
+          sudo apt-get -y update --allow-releaseinfo-change
+          sudo apt-get -y install ldap-utils
+          for i in {1..60}; do
+            ldapsearch -x -H ldap://127.0.0.1:1389 \
+              -D "cn=admin,dc=example,dc=com" -w password \
+              -b "dc=example,dc=com" -s base >/dev/null 2>&1 && exit 0
+            sleep 2
+          done
+          echo "OpenLDAP did not become ready in time"
+          ldapsearch -x -H ldap://127.0.0.1:1389 \
+            -D "cn=admin,dc=example,dc=com" -w password \
+            -b "dc=example,dc=com" -s base || true
+          exit 1
+
+      # GitHub names service containers itself, so the LdapAuth tests cannot
+      # guess it. They use this to enable the memberof overlay (needed by the
+      # ldapUseMemberOf test) via ldapmodify over the container's ldapi
+      # socket. Left empty if lookup fails: that test skips, rest still run.
+      - name: Locate the OpenLDAP container
+        run: |
+          cid=$(docker ps --filter "ancestor=bitnamilegacy/openldap:2.6.10-debian-12-r4" --format '{{.ID}}' | head -n1)
+          echo "Resolved OpenLDAP container: '${cid}'"
+          echo "LDAP_CONTAINER=${cid}" >> $GITHUB_ENV
+
+      # prepare php stuff
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: mysql, mbstring, xml, opcache, readline, redis, gd, apcu
+          ini-values: memory_limit=512M
+
+      - name: Initialize variables
+        run: |
+          echo "USER=`id -u -n`" >> $GITHUB_ENV
+          echo "HOST=localhost" >> $GITHUB_ENV
+
+      - name: Install system deps
+        env:
+          php_version: ${{ matrix.php }}
+        run: |
+          sudo apt-get -y update --allow-releaseinfo-change
+          sudo apt-get -y install curl python3 python3-pip python3-virtualenv apache2 libapache2-mod-php$php_version
+
+      # mod_php (libapache2-mod-php) ships its own php.ini under
+      # /etc/php/$ver/apache2/. The default 128M memory_limit isn't
+      # enough for some MISP requests, so bump it before Apache starts.
+      # The shivammathur/setup-php CLI is bumped via the ini-values
+      # input above; this is the Apache-side companion.
+      - name: Raise mod_php memory_limit
+        env:
+          php_version: ${{ matrix.php }}
+        run: |
+          ini=/etc/php/$php_version/apache2/php.ini
+          sudo sed -i -E 's/^\s*memory_limit\s*=.*/memory_limit = 512M/' "$ini"
+          grep -E '^\s*memory_limit' "$ini"
+
+      # The LdapAuth tests rewrite app/Config/config.php and then log in to
+      # observe the effect. opcache only re-stats a file every
+      # opcache.revalidate_freq seconds (2 by default), so without this the
+      # request runs against the *previous* config and the tests fail in a way
+      # that looks like a plugin bug rather than a caching artefact.
+      - name: Make config.php changes visible immediately (opcache)
+        env:
+          php_version: ${{ matrix.php }}
+        run: |
+          ini=/etc/php/$php_version/apache2/php.ini
+          if grep -qE '^\s*;?\s*opcache.revalidate_freq' "$ini"; then
+            sudo sed -i -E 's/^\s*;?\s*opcache.revalidate_freq\s*=.*/opcache.revalidate_freq = 0/' "$ini"
+          else
+            echo 'opcache.revalidate_freq = 0' | sudo tee -a "$ini" > /dev/null
+          fi
+          grep -E '^\s*opcache.revalidate_freq' "$ini"
+
+      # Runs a set of commands using the runners shell
+      - name: Install deps
+        run: |
+          sudo chown $USER:www-data $HOME/.composer
+          pushd app
+          composer config --no-plugins allow-plugins.composer/installers true
+          composer install --no-progress
+          popd
+
+          # Set perms
+          sudo chown -R $USER:www-data `pwd`
+          sudo chmod -R 775 `pwd`
+          sudo chmod -R g+ws `pwd`/app/tmp
+          sudo chmod -R g+ws `pwd`/app/tmp/cache
+          sudo chmod -R g+ws `pwd`/app/tmp/cache/persistent
+          sudo chmod -R g+ws `pwd`/app/tmp/cache/models
+          sudo chmod -R g+ws `pwd`/app/tmp/logs
+          sudo chmod -R g+ws `pwd`/app/files
+          sudo chmod -R g+ws `pwd`/app/files/scripts/tmp
+          sudo chown -R $USER:www-data `pwd`
+
+          # Fill database with basic MISP schema
+          mysql -h 127.0.0.1 --port 3306 -u root -pbar -e "SET GLOBAL sql_mode = 'STRICT_ALL_TABLES';"
+          mysql -h 127.0.0.1 --port 3306 -u root -pbar -e "grant usage on *.* to misp@'%' identified by 'blah';"
+          mysql -h 127.0.0.1 --port 3306 -u root -pbar -e "grant all privileges on misp.* to misp@'%';"
+          mysql -h 127.0.0.1 --port 3306 -u misp -pblah misp < INSTALL/MYSQL.sql
+
+          # configure apache virtual hosts
+          sudo mkdir -p /etc/apache2/sites-available
+          sudo cp -f build/github-action-ci-apache /etc/apache2/sites-available/misp.conf
+          sudo sed -e "s?%GITHUB_WORKSPACE%?$(pwd)?g" --in-place /etc/apache2/sites-available/misp.conf
+          sudo sed -e "s?%HOST%?${HOST}?g" --in-place /etc/apache2/sites-available/misp.conf
+          sudo a2dissite 000-default
+          sudo a2ensite misp.conf
+          cat /etc/apache2/sites-enabled/misp.conf
+          sudo a2enmod rewrite
+          sudo systemctl start --no-block apache2
+
+          # MISP configuration
+          sudo cp app/Config/bootstrap.default.php app/Config/bootstrap.php
+          sudo cp build/database.php app/Config/database.php
+          sudo cp app/Config/core.default.php app/Config/core.php
+          sudo cp app/Config/config.default.php app/Config/config.php
+          sudo cp build/email.php app/Config/email.php
+
+          # Enable ShibbAuth plugin for tests
+          sudo chmod 666 app/Config/bootstrap.php
+          echo "CakePlugin::load('ShibbAuth');" >> app/Config/bootstrap.php
+
+          # GPG setup
+          sudo mkdir `pwd`/.gnupg
+          # /!\ VERY INSECURE BUT FASTER ON THE BUILD ENV OF TRAVIS
+          sudo cp -a /dev/urandom /dev/random
+          sudo gpg --no-tty --no-permission-warning --pinentry-mode=loopback --passphrase "travistest" --homedir `pwd`/.gnupg --gen-key --batch `pwd`/build/gpg
+          sudo gpg --list-secret-keys --homedir `pwd`/.gnupg
+
+          # change perms
+          sudo chown -R $USER:www-data `pwd`
+          sudo chown -R www-data:www-data `pwd`/.gnupg
+          sudo chmod -R 700 `pwd`/.gnupg
+          sudo usermod -a -G www-data $USER
+          # Ensure the perms of config files
+          sudo chown -R $USER:www-data `pwd`/app/Config
+          sudo chmod -R 777 `pwd`/app/Config
+          app/Console/cake Admin setSetting "MISP.server_settings_skip_backup_rotate" 1
+          sudo chown -R $USER:www-data `pwd`/app/Config
+          sudo chmod -R 777 `pwd`/app/Config
+
+          # fix perms (?)
+          namei -m /home/runner/work
+          sudo chmod +x /home/runner/work
+          sudo chmod +x /home/runner
+          sudo chmod +x /home
+          sudo chmod +x /
+
+      - name: Python setup
+        run: |
+          # Dirty install python stuff
+          python3 -m virtualenv -p python3 ./venv
+          app/Console/cake Admin setSetting "MISP.python_bin" "$GITHUB_WORKSPACE/venv/bin/python"
+          . ./venv/bin/activate
+          export PYTHONPATH=$PYTHONPATH:./app/files/scripts
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+          deactivate
+
+      - name: DB Update
+        run: |
+          app/Console/cake Admin setSetting "MISP.osuser" $USER
+          app/Console/cake Admin runUpdates
+          app/Console/cake Admin schemaDiagnostics
+          # A fresh install starts at the current schema: the legacy corpus had nothing
+          # to do, and no migration is pending.
+          test "$(mysql -h 127.0.0.1 --port 3306 -u misp -pblah -N -e "SELECT value FROM admin_settings WHERE setting = 'db_version'" misp)" = "159"
+          app/Console/cake Admin migrationStatus | grep -q "Everything on disk has been applied."
+
+      - name: Legacy upgrade path
+        # INSTALL/MYSQL.sql no longer exercises the legacy corpus, so this does: the
+        # previous release's baseline, carried through every legacy update and then
+        # every migration - the path every existing instance takes - has to end up as
+        # the schema a fresh install starts with. Bump the tag when a release moves
+        # the baseline.
+        run: |
+          git fetch --depth 1 origin tag v2.5.45
+          mysql -h 127.0.0.1 --port 3306 -u root -pbar -e "create database misp_legacy; grant all privileges on misp_legacy.* to misp@'%';"
+          git show v2.5.45:INSTALL/MYSQL.sql | mysql -h 127.0.0.1 --port 3306 -u misp -pblah misp_legacy
+          MISP_DB_NAME=misp_legacy app/Console/cake Admin runUpdates
+          MISP_DB_NAME=misp_legacy app/Console/cake Admin schemaDiagnostics
+          MISP_DB_NAME=misp_legacy app/Console/cake Admin migrationStatus | grep -q "Everything on disk has been applied."
+          app/Console/cake Admin verifyInstallBaseline --connection legacy --database misp
+
+      - name: Configure MISP
+        run: |
+          app/Console/cake User init | sudo tee ./key.txt
+          echo "AUTH=`cat key.txt`" >> $GITHUB_ENV
+          app/Console/cake Admin setSetting "Session.autoRegenerate" 0
+          app/Console/cake Admin setSetting "Session.timeout" 600
+          app/Console/cake Admin setSetting "Session.cookieTimeout" 3600
+          app/Console/cake Admin setSetting "MISP.host_org_id" 1
+          app/Console/cake Admin setSetting "MISP.email" "info@admin.test"
+          app/Console/cake Admin setSetting "MISP.disable_emailing" false
+          app/Console/cake Admin setSetting "MISP.enable_themes" 1
+          app/Console/cake Admin setSetting --force "debug" true
+          app/Console/cake Admin setSetting "Plugin.CustomAuth_disable_logout" false
+          app/Console/cake Admin setSetting "MISP.redis_host" "127.0.0.1"
+          app/Console/cake Admin setSetting "MISP.redis_port" 6379
+          app/Console/cake Admin setSetting "MISP.redis_database" 13
+          app/Console/cake Admin setSetting "MISP.redis_password" ""
+          app/Console/cake Admin setSetting "GnuPG.email" "info@admin.test"
+          app/Console/cake Admin setSetting "GnuPG.homedir" "`pwd`/.gnupg"
+          app/Console/cake Admin setSetting "GnuPG.password" "travistest"
+          app/Console/cake Admin setSetting "MISP.download_gpg_from_homedir" 1
+          app/Console/cake Admin setSetting "Plugin.ZeroMQ_redis_host" "127.0.0.1"
+          app/Console/cake Admin setSetting "Plugin.ZeroMQ_redis_port" 6379
+          app/Console/cake Admin setSetting "Plugin.ZeroMQ_redis_database" 1
+          app/Console/cake Admin setSetting "Plugin.ZeroMQ_redis_password" ""
+          app/Console/cake Admin setSetting "Plugin.ZeroMQ_enable" 1
+          app/Console/cake Admin setSetting "Plugin.ZeroMQ_audit_notifications_enable" 1
+          app/Console/cake Admin setSetting "SimpleBackgroundJobs.enabled" 1
+          app/Console/cake Admin setSetting "SimpleBackgroundJobs.redis_host" "127.0.0.1"
+          app/Console/cake Admin setSetting "SimpleBackgroundJobs.redis_port" 6379
+          app/Console/cake Admin setSetting "SimpleBackgroundJobs.redis_password" ""
+          app/Console/cake Admin setSetting "SimpleBackgroundJobs.redis_database" 1
+          app/Console/cake Admin setSetting "SimpleBackgroundJobs.redis_namespace" "background_jobs"
+          app/Console/cake Admin setSetting "SimpleBackgroundJobs.supervisor_host" "127.0.0.1"
+          app/Console/cake Admin setSetting "SimpleBackgroundJobs.supervisor_port" 9001
+          app/Console/cake Admin setSetting "SimpleBackgroundJobs.supervisor_user" "supervisor"
+          app/Console/cake Admin setSetting "SimpleBackgroundJobs.supervisor_password" "supervisor"
+          app/Console/cake Admin setSetting "SimpleBackgroundJobs.max_job_history_ttl" 86400
+
+      - name: Check if Redis is ready
+        run: app/Console/cake Admin redisReady
+
+      - name: Start workers
+        run: |
+          sudo pip install supervisor
+          sudo cp build/supervisor/supervisord.conf /etc/supervisord.conf
+          sudo mkdir -p /etc/supervisor/conf.d
+          sudo cp build/supervisor/50-workers.conf /etc/supervisor/conf.d/50-workers.conf
+          sudo python3 -m supervisor.supervisord -c /etc/supervisord.conf
+          sudo python3 -m supervisor.supervisorctl -c /etc/supervisord.conf start all
+          sudo python3 -m supervisor.supervisorctl -c /etc/supervisord.conf status
+
+      - name: Update JSON
+        run: app/Console/cake Admin updateJSON
+
+      - name: Turn MISP live
+        run: app/Console/cake Admin live 1
+
+      - name: Test if apache is working
+        run: |
+          sudo systemctl status apache2 --no-pager -l
+          sudo apache2ctl -S
+          curl -sS http://${HOST}
+
+      - name: Check if dependencies working as expected
+        run: |
+          sudo chmod -R 777 PyMISP
+          pushd PyMISP
+          echo 'url = "http://'${HOST}'"' >> tests/keys.py
+          echo 'key = "'${AUTH}'"' >> tests/keys.py
+          cat tests/keys.py
+          popd
+          . ./venv/bin/activate
+          pushd tests
+          bash ./build-test.sh
+          popd
+          deactivate
+
+      - name: Run PHP tests
+        run: |
+          ./app/Vendor/bin/parallel-lint --exclude app/Lib/cakephp/ --exclude app/Vendor/ -e php,ctp app/
+          sudo -u www-data ./app/Vendor/bin/phpunit app/Test/
+
+      - name: Clone test files
+        uses: actions/checkout@v5
+        with:
+          repository: viper-framework/viper-test-files
+          path: PyMISP/tests/viper-test-files
+
+      - name: Run tests
+        run: |
+          pushd tests
+          ./curl_tests_GH.sh $AUTH $HOST
+          popd
+
+          sudo chmod -R g+ws `pwd`/app/tmp/logs
+
+          . ./venv/bin/activate
+          python -m pytest -v tests/test_misp_framing.py tests/test_stix2misp_wrapper.py
+          pushd PyMISP
+          cp tests/keys.py .
+          python -m pytest -v --durations=0 tests/test_mispevent.py
+          python -m pytest -v --durations=0 tests/testlive_comprehensive.py
+          popd
+          python tests/testlive_comprehensive_local.py -v
+          python tests/testlive_sync.py -v
+          python tests/testlive_security.py -v
+          python tests/testlive_ai_ux.py -v
+          python tests/testregressions.py -v
+          cp PyMISP/tests/keys.py PyMISP/examples/events/
+          pushd PyMISP/examples/events/
+          python ./create_massive_dummy_events.py -l 5 -a 30
+          popd
+          pip install jsonschema
+          python tools/misp-feed/validate.py
+          deactivate
+
+      # Deliberately after the other suites: this switches the instance to
+      # LDAP authentication, which changes how every subsequent form login
+      # behaves. Nothing after this point logs in through the web form.
+      - name: Run LdapAuth tests
+        run: |
+          # Writing an LdapAuth block is what loads the plugin -- bootstrap
+          # does `if (Configure::read('LdapAuth')) CakePlugin::load(...)`.
+          # `cake Admin setSetting` cannot be used: LdapAuth.* keys are not in
+          # MISP's settings schema.
+          php tests/modify_config.php modify '{
+            "Security": {"auth": ["LdapAuth.Ldap"]},
+            "LdapAuth": {
+              "ldapServer": "ldap://127.0.0.1:1389",
+              "ldapDn": "ou=users,dc=example,dc=com",
+              "ldapReaderUser": "cn=testuser,ou=users,dc=example,dc=com",
+              "ldapReaderPassword": "userpassword",
+              "ldapSearchFilter": "",
+              "ldapSearchAttribute": "mail",
+              "ldapEmailField": ["mail"],
+              "ldapNetworkTimeout": -1,
+              "ldapProtocol": 3,
+              "ldapAllowReferrals": true,
+              "starttls": false,
+              "mixedAuth": false,
+              "ldapDefaultOrgId": 1,
+              "ldapDefaultRoleId": 3,
+              "updateUser": true,
+              "debug": true
+            }
+          }' > /dev/null
+
+          . ./venv/bin/activate
+          python -m pytest tests/ldapauth -v --durations=0
+          deactivate
+        env:
+          MISP_URL: http://localhost
+          # MISP runs directly on the runner here, not in a container, so the
+          # config helpers invoke php locally and as the current user. Both
+          # must be explicitly empty -- unset would mean "use the docker
+          # defaults" that the local misp-docker setup relies on.
+          MISP_CONTAINER: ""
+          MISP_PHP_USER: ""
+          MISP_CONFIG_SCRIPT: tests/modify_config.php
+          MISP_CONFIG_FILE: app/Config/config.php
+          # opcache.revalidate_freq is 0 here, so no settle time is needed.
+          MISP_CONFIG_SETTLE_SECONDS: "0.2"
+          # Must agree with the LdapAuth block written above.
+          MISP_LDAP_MIXED_AUTH: "0"
+          MISP_LDAP_ORG_ID: "1"
+          MISP_LDAP_ROLE_ID: "3"
+          LDAP_URI: ldap://127.0.0.1:1389
+          LDAP_READER_DN: cn=testuser,ou=users,dc=example,dc=com
+          LDAP_READER_PASSWORD: userpassword
+          # LDAP_CONTAINER is exported to $GITHUB_ENV by the wait step above.
+          # It lets the suite enable the memberof overlay, which bitnami ships
+          # but does not turn on; if it is empty the ldapUseMemberOf test
+          # skips rather than failing.
+
+      - name: Check requirements.txt
+        run: python tests/check_requirements.py
+
+      - name: System logs
+        if: ${{ always() }}
+        # update logs_test.sh when adding more logsources here
+        run: |
+          tail -n +1 `pwd`/app/tmp/logs/*
+          tail -n +1 /var/log/apache2/*.log
+
+      - name: Application logs
+        if: ${{ always() }}
+        run: |
+          app/Console/cake Log export /tmp/logs.json.gz --without-changes
+          zcat /tmp/logs.json.gz
+
+      - name: Errors in Logs
+        if: ${{ always() }}
+        run: |
+          ./tests/logs_tests.sh
+
+      - name: error.log
+        if: ${{ always() }}
+        run: |
+          cat `pwd`/app/tmp/logs/error.log
