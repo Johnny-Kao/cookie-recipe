@@ -22,3 +22,11 @@ jobs:
         run: |
           php -l research/screen_warninglist_hostname.php
           php research/screen_warninglist_hostname.php build/Warninglist.php
+      - name: Source-derived IPv6 CIDR indexing screen
+        run: |
+          curl --fail --location --silent --show-error --retry 3 \
+            https://raw.githubusercontent.com/MISP/MISP/04fc5f8b7ccb52bb6614ca3e9ccdbfdf6585d985/app/Lib/Tools/CidrTool.php \
+            -o build/CidrTool.php
+          test "$(git hash-object build/CidrTool.php)" = 3aa01583e74f1cdded4f66042f3a245fab2bd8c5
+          php -l research/screen_ipv6_cidr_index.php
+          php research/screen_ipv6_cidr_index.php build/CidrTool.php
