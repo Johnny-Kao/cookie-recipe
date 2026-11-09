@@ -22,11 +22,13 @@ The research-only candidate is produced dynamically from the pinned upstream sou
   - Original lookup **7,034.805 ms**; indexed lookup **40.799 ms**; **172.42x lookup-only speedup**.
   - Original construction **6.171 ms**; indexed construction **16.476 ms**.
   - Original object heap **711,784 bytes**; prototype object heap **1,636,448 bytes** (2.30x).
+- [Adversarial + real-list repeat #42620482118](https://github.com/Johnny-Kao/cookie-recipe/actions/runs/42620482118): PASS **7 adversarial CIDR-list configurations × 1,212 queries** (including /0, overlaps, duplicates, non-canonical host bits, and IPv4-mapped input), plus all synthetic strict equivalence cases and 1,083 real-list comparisons. Repeated real-list timing: **9,343.588 → 53.353 ms, 175.13x**. The variation reinforces magnitude, not an exact production speedup prediction.
+- Verified the current upstream default-branch SHA for both `CidrTool.php` and `Warninglist.php` still matches this pinned source on 2026-11-09; the hotspot is not only in a stale checkout.
 - Auxiliary [Warninglist hostname screen #42618870705](https://github.com/Johnny-Kao/cookie-recipe/actions/runs/42618870705): strict equality PASS 25,020 inputs; isolated improvement only **1.57%** / 30,000 hostname lookups. **Reject hostname candidate**.
 
 ## Open gates
 
-1. Test unusual valid/invalid mask syntax, /0, duplicate prefixes, overlapping masks, non-canonical network host bits, IPv4-mapped IPv6, and arbitrary warninglist ordering. Ensure exact output including match string and first match in each mask group.
+1. Extend fuzz testing for malformed/odd numeric mask syntax and arbitrary warninglist ordering. Existing adversarial /0, duplicates, overlaps, non-canonical host bits and IPv4-mapped input tests pass, but are not exhaustive.
 2. Validate full `Warninglist::checkValue()` and application integration with type filters, not only `CidrTool::contains()`.
 3. Benchmark lookup hit/miss ratios and list sizes, different PHP versions, and object lifetime in real requests.
 4. Evaluate a more memory-efficient index representation without compromising fallback/ordering semantics.
