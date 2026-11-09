@@ -26,10 +26,20 @@ The public method declares `: array`. Under `SIGHTING_POLICY_SIGHTING_REPORTER` 
 
 **Impact:** organisation-filter searches may fail or silently select wrong or zero results; **do not claim data leakage without an integration / ACL test**. Related historical [Issue #9880](https://github.com/MISP/MISP/issues/9880) discusses reversed negation behavior in this same endpoint (closed in 2024), but it does not itself validate the present uninitialized-local problem. Before preparing a candidate patch, establish the supported numeric-ID/unknown UUID semantics from request documentation and adjacent REST search implementations. Resetting `$temp` alone is insufficient to define correct filtering.
 
+## Full-class validation using the unchanged MISP source
+
+[GC #42629590896](https://github.com/Johnny-Kao/cookie-recipe/actions/runs/42629590896) loaded the full original `Sighting` PHP class with framework/service doubles. Its unmodified `listSightings()`, `getLastSightingForAttribute()` and `restSearch()` actually ran (unlike the earlier extracted-method harness). R1 produced `TypeError` for a visible Reporter hit; an ACL-hidden row and an empty list both generated `Undefined array key 0`. R2 reached `find('column')` with the stale or contradictory real condition arrays, and an unknown UUID or integer ID produced `Undefined variable $temp`.
+
+[GC #42630110237](https://github.com/Johnny-Kao/cookie-recipe/actions/runs/42630110237) also generated a **full-source, one-method R1 candidate** changing the Reporter return to `empty($all_sightings) ? [] : $all_sightings[0]`. Tests PASS for visible, ACL-hidden and empty sightings, and policies 0, 2 and 3 return exactly the same values as unmodified MISP. The original failures remain reproduced in the same run. Candidate is **research-only**, with no upstream patch.
+
+**R2 intended input semantics cross-check:** `RestSearchComponent::$paramArray['Sighting']` permits `org_id`. The adjacent `SightingsController::listSightings()` uses `Toolbox::findIdByUuid()`, which explicitly supports UUID and numeric ID (and throws `NotFoundException` when the lookup fails). That is strong codebase evidence that numeric organisation IDs are legitimate, although the exact error contract for `Sighting::restSearch()` still needs to be agreed. Negation and mixed list semantics must be preserved. Directly replacing `$temp` with `null` would not be a safe fix.
+
+**Limit:** Real methods and ACL branches execute, but CakePHP, actual database queries, auth, exporters and production error handling use fakes. These results confirm source-level runtime defects, not a deployed end-to-end test or security impact.
+
 ## Priorities / next gates
 
-1. **R1 high confidence, low repair cost.** Verify the exact extracted candidate using application-level `computeCurrentScore()` and standard unit test harness, both hit/no-hit and ACL outcomes. Candidate is research-only.
-2. **R2 high confidence as code-level warning, conditional severity.** Confirm intended org filter representations and design a safe unknown-UUID rejection/match-none rule without changing permissions or negation semantics.
+1. **R1 confirmed, one-line candidate PASS in full-source Sighting class with framework fakes.** Remaining: run actual CakePHP/DB integration and caller-level `computeCurrentScore()` regression tests before marking Ready; preserve ACL and all policies.
+2. **R2 confirmed, including incorrect real find() conditions.** Remaining: design a numeric-ID/UUID-safe resolver consistent with Toolbox semantics; decide explicit unknown-UUID failure behavior and preserve negation/list filtering. Require DB-backed integration before Ready.
 3. Search further for runtime failure/invariant issues at state transitions, worker retries, import boundaries, and normal error paths. Do not return to performance optimization without new instruction.
 
 The GC assertions intentionally reproduce failures for original code and verify contracts on isolated source-derived copies. A successful harness is **not** evidence that full MISP integration tests pass.
