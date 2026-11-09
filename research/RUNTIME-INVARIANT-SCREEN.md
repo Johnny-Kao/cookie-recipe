@@ -36,9 +36,23 @@ The public method declares `: array`. Under `SIGHTING_POLICY_SIGHTING_REPORTER` 
 
 **Limit:** Real methods and ACL branches execute, but CakePHP, actual database queries, auth, exporters and production error handling use fakes. These results confirm source-level runtime defects, not a deployed end-to-end test or security impact.
 
+## R1 real CakePHP + MariaDB integration — PASS
+
+**Final GC:** [#42634625234](https://github.com/Johnny-Kao/cookie-recipe/actions/runs/42634625234), completed SUCCESS, using upstream MISP commit `04fc5f8b7ccb52bb6614ca3e9ccdbfdf6585d985`, PHP 8.3, actual CakePHP shell, real MariaDB 10.11 with MISP SQL schema, actual MISP `Sighting`, `MispAttribute` and `Event` models and `DecayingModelBase::computeCurrentScore()`. Full working copy exists **only in ephemeral GH Actions runner**; no modifications to Upstream, Fork or Staging.
+
+- Original source: one real Sighting yields `TypeError: array, int returned`; no Sighting yields CakePHP warnings followed by `TypeError: array, null returned`. Original full `computeCurrentScore()` caller also reproduces both failures.
+- One-branch candidate: `return empty($all_sightings) ? [] : $all_sightings[0];`. Actual CakePHP+DB both Sighting hit and no-hit PASS; actual `computeCurrentScore()` score for both cases PASS (no-hit correctly falls back to Attribute timestamp).
+- Regression: Sighting Policy 0, 2 and 3 PASS.
+- Actual upstream PHP lint: **2,193 files PASS**.
+- Actual upstream PHPUnit suite after matching its GPG fixture setup: **945 tests; 3,114 assertions; 2 skipped; 0 failures; 0 errors**.
+
+Earlier GC [#42634112178](https://github.com/Johnny-Kao/cookie-recipe/actions/runs/42634112178) had two GPG unit test environment errors due to missing test GPG setup, not R1. The final successful run fixed only test-runner GPG configuration, without changing the R1 patch.
+
+**Gate:** R1 is research-validated and technically suitable for independent PR staging. For an upstream-submittable patch, put the permanent regression into the project's accepted test layout, confirm clean staging diff and follow the project PR conventions. This research did not create a staging branch or an upstream PR. PHP 8.1 matrix has not yet been rerun; current real DB gate is PHP 8.3.
+
 ## Priorities / next gates
 
-1. **R1 confirmed, one-line candidate PASS in full-source Sighting class with framework fakes.** Remaining: run actual CakePHP/DB integration and caller-level `computeCurrentScore()` regression tests before marking Ready; preserve ACL and all policies.
+1. **R1 confirmed, minimal candidate PASS with real CakePHP/MariaDB, Decay Score caller, policy regressions and upstream PHP suite.** Technically ready for independent PR staging; still needs a permanent upstream regression test and staging diff review, not a new Root Cause investigation.
 2. **R2 confirmed, including incorrect real find() conditions.** Remaining: design a numeric-ID/UUID-safe resolver consistent with Toolbox semantics; decide explicit unknown-UUID failure behavior and preserve negation/list filtering. Require DB-backed integration before Ready.
 3. Search further for runtime failure/invariant issues at state transitions, worker retries, import boundaries, and normal error paths. Do not return to performance optimization without new instruction.
 
