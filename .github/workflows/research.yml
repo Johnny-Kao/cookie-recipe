@@ -39,6 +39,7 @@ jobs:
           php -l research/concurrency.php
           php -l research/benchmark_attachment.php
           php -l research/property_cases.php
+          php -l research/redis_membership_batch_probe.php
           php research/build_candidate.php build/upstream-Feed.php
           php -l build/extracted.php
       - name: Exact method behavior regression
@@ -53,6 +54,8 @@ jobs:
           php research/measure_method.php | tee results/extracted-method-measurement.json
       - name: Repeated PHP-side attachment benchmark
         run: php research/benchmark_attachment.php | tee results/attachment-benchmark.json
+      - name: Investigate Redis membership batching only (no patch)
+        run: php research/redis_membership_batch_probe.php | tee results/membership-batch-probe.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
