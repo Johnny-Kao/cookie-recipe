@@ -124,7 +124,7 @@ expectFailure(fn()=>$noRows->getLastSightingForAttribute($user,15),'R1-reporter-
 restore_error_handler();
 echo "PASS full class R1 independent listSightings ACL hit/hidden/empty fixtures\n";
 foreach ([
-    'hit'=>[['row'=>$row],true,[$row]],
+    'hit'=>[['row'=>$row],true,$row],
     'hidden'=>[['row'=>$row],false,[]],
     'empty'=>[[],true,[]],
 ] as $label=>$spec) {
@@ -132,7 +132,7 @@ foreach ([
     $rows=isset($named['row'])?[$named['row']]:[];
     $patchedModel=patchedInstance($rows,$reporter);
     $actual=$patchedModel->getLastSightingForAttribute($user,15);
-    if($actual!==$expected)throw new RuntimeException('R1 patched full class mismatch '.$label);
+    if($actual!==$expected)throw new RuntimeException('R1 patched full class mismatch '.$label.' actual='.json_encode($actual).' expected='.json_encode($expected));
     echo 'PASS R1 patched full class '.$label."\n";
 }
 foreach ([0,2,3] as $policy) {
