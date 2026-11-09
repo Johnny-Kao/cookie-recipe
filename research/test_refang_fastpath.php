@@ -68,7 +68,7 @@ foreach($payloads as $i=>$payload) {
     $new=$candidate->checkFreeText($payload);
     if ($baseline !== $new) throw new RuntimeException('full public method mismatch payload '.$i);
 }
-echo 'PASS checkFreeText output equivalence for '.count($payloads)." mixed payloads\\n";
+echo 'PASS checkFreeText output equivalence for '.count($payloads)." mixed payloads\n";
 function endToEndBench($tool, string $payload, int $repeats = 5): float {
     $tool->checkFreeText($payload);
     $times=[];
@@ -85,11 +85,11 @@ foreach (['domains'=> 'foo%d.example.com', 'ips'=>'192.0.%d.%d', 'defanged'=>'hx
     for ($i=0;$i<2200;$i++) {
         $rows[]= $name==='ips'?sprintf($format,intdiv($i,256),$i%256):sprintf($format,$i);
     }
-    $payload=implode("\\n",$rows);
+    $payload=implode("\n",$rows);
     $before=$original->checkFreeText($payload);
     $after=$candidate->checkFreeText($payload);
     if ($before!==$after) throw new RuntimeException('full benchmark output mismatch '.$name);
     $oldMs=endToEndBench($original,$payload);
     $newMs=endToEndBench($candidate,$payload);
-    echo json_encode(['full_path'=>$name,'rows'=>count($rows),'output_count'=>count($after),'baseline_ms'=>round($oldMs,3),'candidate_ms'=>round($newMs,3),'speedup'=>round($oldMs/max($newMs,0.0001),2)],JSON_UNESCAPED_SLASHES)."\\n";
+    echo json_encode(['full_path'=>$name,'rows'=>count($rows),'output_count'=>count($after),'baseline_ms'=>round($oldMs,3),'candidate_ms'=>round($newMs,3),'speedup'=>round($oldMs/max($newMs,0.0001),2)],JSON_UNESCAPED_SLASHES)."\n";
 }
