@@ -288,7 +288,7 @@ jobs:
         # the schema a fresh install starts with. Bump the tag when a release moves
         # the baseline.
         run: |
-          git fetch --depth 1 origin tag v2.5.45
+          git fetch --depth 1 https://github.com/MISP/MISP.git tag v2.5.45
           mysql -h 127.0.0.1 --port 3306 -u root -pbar -e "create database misp_legacy; grant all privileges on misp_legacy.* to misp@'%';"
           git show v2.5.45:INSTALL/MYSQL.sql | mysql -h 127.0.0.1 --port 3306 -u misp -pblah misp_legacy
           MISP_DB_NAME=misp_legacy app/Console/cake Admin runUpdates
