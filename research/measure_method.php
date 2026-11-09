@@ -6,6 +6,8 @@ class CountedRedis {
     private Redis $r;
     public int $smembers = 0;
     public int $sismember = 0;
+    public int $smismember = 0;
+    public int $membership_elements = 0;
     public function __construct() {
         $this->r = new Redis();
         $this->r->connect('127.0.0.1', 6379, 2.0);
@@ -15,6 +17,11 @@ class CountedRedis {
     public function sismember(string $key, string $value) {
         $this->sismember++;
         return $this->r->sIsMember($key, $value);
+    }
+    public function sMIsMember(string $key, string ...$members) {
+        $this->smismember++;
+        $this->membership_elements += count($members);
+        return $this->r->sMIsMember($key, ...$members);
     }
     public function smembers(string $key) {
         $this->smembers++;
@@ -37,6 +44,8 @@ function measure(string $className, array $sources, array $attributes): array {
         'ms' => round($duration,3),
         'smembers' => $proxy->smembers,
         'sismember' => $proxy->sismember,
+        'smismember' => $proxy->smismember,
+        'batch_members' => $proxy->membership_elements,
         'peak_increment_bytes' => max(0, memory_get_peak_usage(false) - $before),
     ];
 }
@@ -65,5 +74,5 @@ echo json_encode(['kind'=>'extracted-misp-method', 'results'=>$all, 'caveats'=>[
   'synthetic Redis fixture, not whole MISP runtime',
   'single timed sample, not statistical benchmark',
   'peak incremental memory reflects PHP allocator and order',
-  'candidate cache remains unbounded'
+  'batch membership candidate does not introduce UUID caching; other candidate experiments may differ'
 ]], JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES) . "\n";

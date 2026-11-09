@@ -7,9 +7,13 @@ jobs:
   benchmark:
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        datastore: [redis:7-alpine, valkey/valkey:7.2]
     services:
       redis:
-        image: redis:7-alpine
+        image: ${{ matrix.datastore }}
         ports:
           - 6379:6379
         options: >-
@@ -67,7 +71,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: synthetic-redis-benchmark
+          name: synthetic-redis-benchmark-${{ strategy.job-index }}
           path: results/
           if-no-files-found: warn
           retention-days: 7
