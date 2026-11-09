@@ -50,10 +50,37 @@ Earlier GC [#42634112178](https://github.com/Johnny-Kao/cookie-recipe/actions/ru
 
 **Gate:** R1 is research-validated and technically suitable for independent PR staging. For an upstream-submittable patch, put the permanent regression into the project's accepted test layout, confirm clean staging diff and follow the project PR conventions. This research did not create a staging branch or an upstream PR. PHP 8.1 matrix has not yet been rerun; current real DB gate is PHP 8.3.
 
+## 2026-11-09 decision update — R1 PARK, R2 active
+
+**R1 PARK by owner decision.** R1 has verified correctness defect and successful CakePHP/DB integration, but its scope/impact does not justify further upstream work now. Do not prepare R1 staging/PR unless the decision changes.
+
+### R2: real REST search and MariaDB data loss from results — reproducible
+
+**Evidence:** [GC #42639654918](https://github.com/Johnny-Kao/cookie-recipe/actions/runs/42639654918) PASS. It runs the unchanged pinned MISP `Sighting::restSearch()` through **real CakePHP / MariaDB 10.11** with two actual organisations, events, attributes, and sightings; site-admin user and everyone sightings policy intentionally isolate query semantics from ACL. The test reads the returned **real REST JSON**, not just constructed SQL conditions. Assertions fix observed results and fail if the behavior differs.
+
+| `org_id` filter | Real returned Sighting IDs | Expected from valid identifiers / negation | Result |
+|---|---|---|---|
+| org A UUID | 9101 | 9101 | correct |
+| org B UUID | 9102 | 9102 | correct |
+| [A UUID, B UUID] | 9101, 9102 | 9101, 9102 | correct |
+| **integer 9101** | **empty + undefined-var warning** | **9101** | **incorrect; documented API input** |
+| **numeric string "9102"** | **empty + undefined-var warning** | **9102** | **incorrect** |
+| [A UUID, integer 9102] | **9101 only; no warning** | 9101, 9102 | **silent omission** |
+| [A UUID, !unknown UUID] | **empty; no warning** | 9101 (unknown org should not exclude A) | **silent false negative** |
+| !A UUID | 9102 | 9102 | correct |
+| [A UUID, !B UUID] | 9101 | 9101 | correct |
+| unknown UUID only | empty + warning | policy on invalid org is undefined | do not infer severity |
+
+**Official input contract:** MISP `docs/API_Doc.md`, the `/sightings/restSearch/[context]` endpoint, explicitly declares `org_id | integer` under optional parameters: https://github.com/MISP/MISP/blob/2.5/docs/API_Doc.md . This directly establishes that numeric org_id is an intended input, not merely an adjacent-API inference. The `RestSearchComponent::$paramArray['Sighting']` also permits `org_id`; `ToolboxComponent::findIdByUuid()` used elsewhere accepts both numeric org IDs and UUIDs. **Important:** the docs only explicitly say integer, not that every mixed-format array or negation is guaranteed public contract; those extended cases are secondary evidence.
+
+**Impact:** Documented legitimate API request returns an incorrect empty result even though the Sighting exists. Mixed valid inputs can silently suppress results, while an invalid negated org UUID can suppress all results. This is a genuine user-observable correctness defect of a REST endpoint, not demonstrated data corruption, ACL leak, security vulnerability, or widespread operational outage. Severity likely moderate for users depending on organisation-filtered Sighting exports; prevalence unknown.
+
+**Research-only verdict:** **R2 should proceed to a narrowly scoped fix/DB regression candidate**. Define numeric-ID vs UUID resolution and invalid/negative semantics before coding. Favor project-local parsing patterns, preserve existing valid UUID and negation behavior, and do not claim `Upstream Ready` until patched integration and standard upstream PHP tests pass. No upstream, staging or PR changes have been made.
+
 ## Priorities / next gates
 
-1. **R1 confirmed, minimal candidate PASS with real CakePHP/MariaDB, Decay Score caller, policy regressions and upstream PHP suite.** Technically ready for independent PR staging; still needs a permanent upstream regression test and staging diff review, not a new Root Cause investigation.
-2. **R2 confirmed, including incorrect real find() conditions.** Remaining: design a numeric-ID/UUID-safe resolver consistent with Toolbox semantics; decide explicit unknown-UUID failure behavior and preserve negation/list filtering. Require DB-backed integration before Ready.
+1. **R1 PARK.** No more work requested despite previously validated CakePHP/DB candidate.
+2. **R2 active, real CakePHP/MariaDB REST JSON failures confirmed for officially documented numeric org_id.** Next: determine minimal project-style numeric/UUID resolution plus invalid identifier and negation policy, then DB-backed patched regression and upstream PHP suite before staging.
 3. Search further for runtime failure/invariant issues at state transitions, worker retries, import boundaries, and normal error paths. Do not return to performance optimization without new instruction.
 
 The GC assertions intentionally reproduce failures for original code and verify contracts on isolated source-derived copies. A successful harness is **not** evidence that full MISP integration tests pass.
