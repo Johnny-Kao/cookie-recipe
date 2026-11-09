@@ -21,7 +21,7 @@ The comment **"TODO: This can be optimised in future to do that in one pass"** i
 
 ## Validation
 
-[GitHub Actions #42569776805](https://github.com/Johnny-Kao/cookie-recipe/actions/runs/42569776805), Redis 7 and Valkey 7.2 jobs PASS, after fixing a **test fixture error** and ensuring `pipefail` propagates PHP failures.
+Latest expanded suite: [GitHub Actions #42570522121](https://github.com/Johnny-Kao/cookie-recipe/actions/runs/42570522121), both Redis 7 and Valkey 7.2 test jobs SUCCESS. **Green jobs mean the research experiments ran to completion, not that strict behavioral equivalence passed.** The concurrency experiment intentionally expects and reports a divergence. Earlier benchmark: #42569776805.
 
 Both classes are extracted directly from the pinned actual MISP method and execute against ephemeral real Redis/Valkey, with stubbed CakePHP `find`, `ClassRegistry`, `visibleConditions`, and `fetchAttributesSimple` to simulate permitted feeds / DB results. The harness compares exact returned arrays `===`, including attribute keys, source names, and cross-event correlations. It covers admin vs non-admin visibility, zero/high/partial hit ratios, duplicate values and string keys. **This is not full MISP integration, nor proof of all ACL paths**.
 
@@ -38,12 +38,12 @@ Reported median of 3–5 sequential repeated runs, excerpt:
 
 ## Remaining problems / gating criteria
 
-1. **Concurrent refresh behavior:** pipelining a batch collapses read timing. If a writer mutates a per-Feed Redis set while processing, the exact observation timing differs versus sequential reads. This was not tested for P2, and strict equality for arbitrary writers is not guaranteed. Feed Cache is inherently mutable.
+1. **Concurrent refresh behavior — CONFIRMED DIFFERENCE:** `research/freetext_concurrency_tests.php` uses an independent writer to mutate a per-Feed Redis set between reads. Baseline and candidate return different correlations. This is expected for commands queued before later execution, but **fails the user's requirement of absolute observed-behavior equivalence** pending a formal consistency contract.
 2. **Cache/SQL consistency:** The Feed exists/visible lists are collected first. No production refresh consistency guarantee has been confirmed.
-3. **Error behavior:** A Redis error mid-request occurs at a different stage with pipeline; partial results / exceptions may differ. Test this and identify expected contract.
+3. **Error behavior — CONFIRMED DIFFERENCE:** `research/freetext_error_tests.php` injects `exists`, second `sismember`, `pipeline`, and `exec` failures. Existing and new membership/exists exception paths align in this harness, but pipeline construction and pipeline execution introduce **new failure points** absent from baseline; the candidate throws while baseline returns. No production-safe recovery contract has been established.
 4. **Full integration:** Must use true MISP CakePHP fixtures and all project tests before staging/upstream. Stubs cannot prove security invariants.
-5. **RAM and scale:** 256 pending pairs plus Redis return data appears bounded, but large lines, unusual keys and very large Feed candidate lists need stress testing and batch-size review.
+5. **RAM and scale:** 256 pending pairs plus Redis return data are bounded by batching. Verified empty inputs, mixed string/numeric keys, duplicate rows, existing correlation fields, batch boundaries 255/256/257/511/512/513/1025 and 1400-row stress on both engines. At 1400 rows, Redis 7: baseline 2254.8 ms / candidate 48.6 ms; peak incremental PHP memory 2,394,296 B vs 2,455,616 B; Valkey 7.2: 1285.4 ms vs 34.3 ms, same memory readings. Synthetic, isolated, single stress sample; larger sizes and lifecycle still untested.
 6. **Maintainability:** ~30 lines of buffer/flush logic is more than the original nested loop; consider compact helper only if reused. Avoid making ACL-sensitive logic harder to audit. Preserve complete original output order.
 7. **Reproducibility:** Measure more realistic distributions and CPU separately; beware short loopback timings and the synthetic 100% hit case.
 
-**Verdict:** P2 is a stronger performance opportunity than the earlier P1 SMISMEMBER change. Research candidate PASS on listed static fixtures. Not production-validated; do not open upstream PR yet. TODO belongs to P1, not P2.
+**Verdict — HOLD:** P2 offers large synthetic latency reduction and static-array equivalence, but adversarial concurrent mutation and injected Redis failures demonstrate non-equivalence. Do not label this candidate behavior-preserving or ready for staging/upstream. Next decision must first establish whether MISP permits batched read-time consistency and a revised error contract; otherwise a lower-impact technique must be used. Full MISP integration suite has **not** run. Maintainer TODO belongs to P1, not P2.
