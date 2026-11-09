@@ -132,6 +132,8 @@ jobs:
           php research/test_refang_fastpath.php | tee results/refang-fastpath.log
           php -l research/refang_extended_validation.php
           php research/refang_extended_validation.php | tee results/refang-extended.log
+          php -l research/profile_parse_freetext.php
+          php research/profile_parse_freetext.php | tee results/parse-freetext-profile.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
