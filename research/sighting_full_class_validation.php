@@ -7,6 +7,11 @@ $source=file_get_contents($argv[1] ?? '');
 if ($source === false || !str_contains($source, 'class Sighting extends AppModel')) throw new RuntimeException('missing or changed pinned Sighting source');
 $target=dirname(__DIR__).'/build/RealSighting.php';
 file_put_contents($target,$source);
+$needle = "\$sighting = \$all_sightings[0]['Sighting']['date_sighting'];\n            return \$sighting;";
+if (substr_count($source,$needle)!==1)throw new RuntimeException('Pinned R1 source changed');
+$patched=str_replace($needle,'return empty($all_sightings) ? [] : $all_sightings[0];',$source);
+$patched=str_replace('class Sighting extends AppModel','class SightingPatched extends AppModel',$patched);
+file_put_contents(dirname(__DIR__).'/build/RealSightingPatched.php',$patched);
 
 class App {public static function uses($name,$package):void {}}
 class AppModel {public $Event; public $Attribute;public $Organisation;}
@@ -61,6 +66,31 @@ class RealSightingHarness extends Sighting {
         return $this->sightingRows;
     }
 }
+require dirname(__DIR__).'/build/RealSightingPatched.php';
+class RealSightingPatchedHarness extends SightingPatched {
+    public array $sightingRows=[];
+    public array $finds=[];
+    public bool $reporter=true;
+    public function hasAny($conditions):bool{return $this->reporter;}
+    public function find($mode,$args=[]){
+        $this->finds[]=['mode'=>$mode,'conditions'=>$args['conditions']??[]];
+        if($mode==='all')return $this->sightingRows;
+        if($mode==='first')return $this->sightingRows[0]??[];
+        if($mode==='column')return array_column(array_column($this->sightingRows,'Sighting'),'id');
+        throw new RuntimeException('Unexpected find mode '.$mode);
+    }
+    public function getSightings(array $user,array $ids,$includeEvent=true,$includeAttribute=false,$includeUuid=false){return $this->sightingRows;}
+}
+function patchedInstance(array $rows,bool $reporter):RealSightingPatchedHarness{
+    $obj=new RealSightingPatchedHarness();
+    $obj->Event=new FakeEvent();
+    $obj->Attribute=$obj->Event->Attribute;
+    $obj->Organisation=new FakeOrg();
+    $obj->Event->Attribute->attributes=[['Attribute'=>['id'=>15],'Event'=>['id'=>12,'orgc_id'=>202]]];
+    $obj->sightingRows=$rows;
+    $obj->reporter=$reporter;
+    return $obj;
+}
 $user=['org_id'=>101,'Role'=>['perm_site_admin'=>false]];
 function instance(array $rows,bool $reporter):RealSightingHarness {
     $obj=new RealSightingHarness();
@@ -93,6 +123,26 @@ $noRows=instance([],true);
 expectFailure(fn()=>$noRows->getLastSightingForAttribute($user,15),'R1-reporter-no-sightings');
 restore_error_handler();
 echo "PASS full class R1 independent listSightings ACL hit/hidden/empty fixtures\n";
+foreach ([
+    'hit'=>[['row'=>$row],true,[$row]],
+    'hidden'=>[['row'=>$row],false,[]],
+    'empty'=>[[],true,[]],
+] as $label=>$spec) {
+    [$named,$reporter,$expected]=$spec;
+    $rows=isset($named['row'])?[$named['row']]:[];
+    $patchedModel=patchedInstance($rows,$reporter);
+    $actual=$patchedModel->getLastSightingForAttribute($user,15);
+    if($actual!==$expected)throw new RuntimeException('R1 patched full class mismatch '.$label);
+    echo 'PASS R1 patched full class '.$label."\n";
+}
+foreach ([0,2,3] as $policy) {
+    Configure::$values['Plugin.Sightings_policy']=$policy;
+    $originalModel=instance([$row],true);
+    $patchedModel=patchedInstance([$row],true);
+    if($originalModel->getLastSightingForAttribute($user,15)!==$patchedModel->getLastSightingForAttribute($user,15))throw new RuntimeException('other policy changed '.$policy);
+    echo 'PASS R1 patched other policy unchanged '.$policy."\n";
+}
+Configure::$values['Plugin.Sightings_policy']=1;
 
 function checkRestSearch(array $orgFilter):array{
     global $user;
