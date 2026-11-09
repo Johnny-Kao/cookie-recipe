@@ -51,10 +51,14 @@ class R1DbResearchShell extends AppShell
                 }
                 echo "PASS fixed R1 mode attribute=$attributeId\n";
             } catch (TypeError $e) {
-                if ($mode !== 'original' || !$hasHit) {
+                if ($mode !== 'original') {
                     throw $e;
                 }
-                echo 'CONFIRMED original R1 TypeError in real CakePHP + MariaDB: '.$e->getMessage()."\n";
+                $expectedType = $hasHit ? 'int' : 'null';
+                if (strpos($e->getMessage(), $expectedType.' returned') === false) {
+                    throw $e;
+                }
+                echo 'CONFIRMED original R1 TypeError in real CakePHP + MariaDB, hit=' . ($hasHit ? 'yes' : 'no') . ': '.$e->getMessage()."\n";
             } catch (ErrorException $e) {
                 if ($mode !== 'original' || $hasHit || strpos($e->getMessage(), 'Undefined array key 0') === false) {
                     throw $e;
