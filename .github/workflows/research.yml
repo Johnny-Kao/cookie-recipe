@@ -47,6 +47,9 @@ jobs:
           php -l research/build_batch_candidate.php
           php -l research/build_freetext_candidate.php
           php -l research/test_freetext.php
+          php -l research/freetext_edge_tests.php
+          php -l research/freetext_concurrency_tests.php
+          php -l research/freetext_error_tests.php
           php research/build_candidate.php build/upstream-Feed.php
           php -l build/extracted.php
       - name: Exact method behavior regression
@@ -76,6 +79,9 @@ jobs:
           php -l build/freetext-extracted.php
           set -o pipefail
           php research/test_freetext.php | tee results/freetext-research.log
+          php research/freetext_edge_tests.php | tee results/freetext-edge.log
+          php research/freetext_concurrency_tests.php | tee results/freetext-concurrency.log
+          php research/freetext_error_tests.php | tee results/freetext-faults.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:

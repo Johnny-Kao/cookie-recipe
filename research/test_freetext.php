@@ -125,6 +125,7 @@ function testCase($name,$n,$sourceCount,$rate,$delay=0,$admin=true,$repeats=3) {
     return ['case'=>$name,'attributes'=>$n,'feeds'=>$sourceCount,'rate'=>$rate,'delay_us'=>$delay,
         'baseline'=>$observed['baseline'],'candidate'=>$observed['candidate'],'identical'=>true];
 }
+if (realpath($_SERVER['SCRIPT_FILENAME']) === __FILE__) {
 $results=[];
 try {
     $results[]=testCase('zero-hits',15,8,0,0,true,3);
@@ -134,3 +135,4 @@ try {
     $results[]=testCase('network-delay',100,15,30,300,true,3);
     echo "RESULT_JSON=".json_encode($results,JSON_UNESCAPED_SLASHES)."\n";
 } finally {cleanup($r);}
+}
