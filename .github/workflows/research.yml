@@ -74,6 +74,7 @@ jobs:
         run: |
           php research/build_freetext_candidate.php build/upstream-Feed.php
           php -l build/freetext-extracted.php
+          set -o pipefail
           php research/test_freetext.php | tee results/freetext-research.log
       - uses: actions/upload-artifact@v4
         if: always()

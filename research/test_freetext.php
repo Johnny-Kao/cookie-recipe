@@ -62,7 +62,7 @@ function seed(Redis $r,array $feeds,array $data,int $rate): void {
         if($id%11===0) continue; // absent cache source
         $key='misp:feed_cache:'.$id;
         $r->sAdd($key, md5('dummy-'.$id));
-        foreach($data as $i=>$entry) {
+        foreach(array_values($data) as $i=>$entry) {
             if((($i*7+$id*13)%100)<$rate)$r->sAdd($key,md5($entry['value']));
         }
     }
