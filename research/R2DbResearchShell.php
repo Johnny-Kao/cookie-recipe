@@ -34,6 +34,8 @@ class R2DbResearchShell extends AppShell
             'mixed-valid-integer' => array($a,9102),
             'mixed-valid-negated-unknown' => array($a,'!'.$unknown),
             'numeric-only' => array(9101),
+            'numeric-string-only' => array('9102'),
+            'numeric-negation' => array('!9101'),
             'unknown-only' => array($unknown),
             'negated-unknown-only' => array('!'.$unknown),
             'valid-negation' => array('!'.$a),
@@ -64,7 +66,27 @@ class R2DbResearchShell extends AppShell
                     }
                 }
                 sort($ids);
+                $expectedObserved = array(
+                    'control-a'=>array(9101),
+                    'control-b'=>array(9102),
+                    'control-two-valid'=>array(9101,9102),
+                    'mixed-valid-unknown'=>array(9101),
+                    'mixed-valid-integer'=>array(9101),
+                    'mixed-valid-negated-unknown'=>array(),
+                    'numeric-only'=>array(),
+                    'numeric-string-only'=>array(),
+                    'numeric-negation'=>array(),
+                    'unknown-only'=>array(),
+                    'negated-unknown-only'=>array(),
+                    'valid-negation'=>array(9102),
+                    'valid-plus-negation'=>array(9101),
+                );
+                if ($ids !== $expectedObserved[$name]) {
+                    throw new RuntimeException('Observed R2 result changed: '.json_encode($ids).' expected '.json_encode($expectedObserved[$name]));
+                }
                 echo 'R2 DB RESULT '.json_encode(array('case'=>$name,'org_id'=>$orgIds,'sighting_ids'=>$ids,'warnings'=>$warnings))."\n";
+            } catch (RuntimeException $e) {
+                throw $e;
             } catch (Throwable $e) {
                 echo 'R2 DB FAILURE '.json_encode(array('case'=>$name,'exception'=>get_class($e),'error'=>$e->getMessage(),'warnings'=>$warnings))."\n";
             } finally {
