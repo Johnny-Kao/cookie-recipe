@@ -22,7 +22,7 @@ class FeedHarnessBase {
     public function setupRedisWithException() { return $this->redis; }
     public function getCachedFeedsOrServers(array $user, string $scope): array { return $this->sources; }
 }
-require __DIR__ . '/../build/extracted.php';
+require __DIR__ . '/../build/' . (getenv('MISP_EXTRACTED') ?: 'extracted.php');
 $r = new Redis();
 $r->connect('127.0.0.1', 6379, 2.0);
 $prefixes = ['misp:feed_cache:', 'misp:server_cache:'];

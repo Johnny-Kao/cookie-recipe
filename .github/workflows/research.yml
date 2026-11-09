@@ -40,6 +40,7 @@ jobs:
           php -l research/benchmark_attachment.php
           php -l research/property_cases.php
           php -l research/redis_membership_batch_probe.php
+          php -l research/build_batch_candidate.php
           php research/build_candidate.php build/upstream-Feed.php
           php -l build/extracted.php
       - name: Exact method behavior regression
@@ -56,6 +57,13 @@ jobs:
         run: php research/benchmark_attachment.php | tee results/attachment-benchmark.json
       - name: Investigate Redis membership batching only (no patch)
         run: php research/redis_membership_batch_probe.php | tee results/membership-batch-probe.json
+      - name: Build and compare batched membership research candidate
+        run: |
+          php research/build_batch_candidate.php build/upstream-Feed.php
+          php -l build/batch-extracted.php
+          MISP_EXTRACTED=batch-extracted.php php research/regression.php
+          MISP_EXTRACTED=batch-extracted.php php research/property_cases.php
+          MISP_EXTRACTED=batch-extracted.php php research/measure_method.php | tee results/membership-method-benchmark.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
