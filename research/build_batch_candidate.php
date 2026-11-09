@@ -37,7 +37,7 @@ $original=<<<'CODE'
         $results = $pipe->exec();
 CODE;
 $replacement=<<<'CODE'
-        $results = $redis->sMIsMember($cachePrefix . 'combined', $hashTable);
+        $results = $redis->sMIsMember($cachePrefix . 'combined', ...$hashTable);
 CODE;
 if(substr_count($candidate,$original)!==1)throw new RuntimeException('Combined results changed');
 $candidate=str_replace($original,$replacement,$candidate);
@@ -53,7 +53,7 @@ $replacement=<<<'CODE'
             foreach ($hitIds as $k) {
                 $sourceHashes[] = $hashTable[$k];
             }
-            $sourceHits = $redis->sMIsMember($cachePrefix . $sourceId, $sourceHashes);
+            $sourceHits = $redis->sMIsMember($cachePrefix . $sourceId, ...$sourceHashes);
 CODE;
 if(substr_count($candidate,$original)!==1)throw new RuntimeException('Per-source checks changed');
 $candidate=str_replace($original,$replacement,$candidate);
