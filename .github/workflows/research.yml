@@ -115,6 +115,21 @@ jobs:
           php research/test_freetext.php | tee results/freetext-local-memo.log
           php research/freetext_edge_tests.php | tee results/freetext-local-memo-edge.log
           php research/freetext_local_cache_staleness.php memo | tee results/freetext-local-memo-staleness.log
+      - name: Research pure PHP IOC refang fast-path (no Redis changes)
+        run: |
+          set -o pipefail
+          curl --fail --location --silent --show-error --retry 3 \
+            https://raw.githubusercontent.com/MISP/MISP/04fc5f8b7ccb52bb6614ca3e9ccdbfdf6585d985/app/Lib/Tools/ComplexTypeTool.php \
+            -o build/ComplexTypeTool.php
+          curl --fail --location --silent --show-error --retry 3 \
+            https://raw.githubusercontent.com/MISP/MISP/04fc5f8b7ccb52bb6614ca3e9ccdbfdf6585d985/app/Lib/Tools/TmpFileTool.php \
+            -o build/TmpFileTool.php
+          test "$(git hash-object build/ComplexTypeTool.php)" = ca399abcaebc580a542af4858628c1ac1b4376d3
+          php -l research/build_refang_fastpath.php
+          php -l research/test_refang_fastpath.php
+          php research/build_refang_fastpath.php build/ComplexTypeTool.php
+          php -l build/ComplexTypeToolFastPath.php
+          php research/test_refang_fastpath.php | tee results/refang-fastpath.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
