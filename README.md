@@ -1,30 +1,27 @@
-# MISP Feed Correlation Research
+# cookie-recipe — independent MISP correlation research
 
-Independent CoreFoundry research. **Not a fork, not an official MISP project.**
+**Public research repository, not a fork or official MISP project.** Upstream is read-only: https://github.com/MISP/MISP.
 
-Upstream: https://github.com/MISP/MISP
+## Current question
 
-## Hypothesis
+Can `Feed::attachFeedCorrelations()` do less work without changing existing behavior?
 
-`Feed::attachFeedCorrelations()` uses per-source Redis membership checks and then repeatedly reads the same global `event_uuid_lookup:<hash>` set when one hash matches several MISP feeds. Reuse a fetched lookup by unique hash without changing user visibility, source membership, output ordering or UUID association.
+The first cross-source Redis UUID caching experiment reduced calls, but **failed strict equivalence under a concurrent Redis cache update**. It remains historical research only.
 
-## Safety and scope
+The **current candidate** retains every Redis command and its order, replacing one repeated PHP `array_column()/in_array()` check with a direct early-exit search over source IDs. It does not alter the Redis cache lifecycle.
 
-- Never push experimental code to MISP upstream.
-- All benchmarks use synthetic, public-safe data; no production events, UUIDs, tokens, credentials or customer feeds.
-- Keep Feed and Server cache namespaces separate.
-- Maintain baseline and optimized output equivalence, including duplicate hash/attribute cases, URL stripping, composite types, and non-admin server restrictions.
-- Do not claim end-to-end speedup from a synthetic microbenchmark.
-- This repository is intentionally **public**. Keep all test data synthetic; do not commit secrets or confidential feeds.
+## Evidence and status
 
-## Research plan
+See [research/OPTIMIZATION-REVIEW.md](research/OPTIMIZATION-REVIEW.md) for exact pinned upstream source, regression cases, concurrent-update test and measured performance.
 
-1. Pin an upstream revision and inspect existing tests and call sites.
-2. Reproduce Redis `SMEMBERS` duplication with a real ephemeral Redis instance.
-3. Build behavior-equivalence cases (including ACL and ordering).
-4. Compare the exact upstream function against a minimally changed, currently **unbounded** per-call cache candidate (done for synthetic fixtures).
-5. Address concurrent Redis cache updates, unbounded memory use, and real MISP integration before describing the candidate as production-safe.
-6. Measure repeated runs, bytes transferred, wall time and peak PHP memory at representative production-like sizes.
-6. Only after the comparison passes, consider a separate staging branch; upstream is out of scope for this research phase.
+- Static synthetic outputs: PASS on covered Feed/Server and ACL cases.
+- Deterministic randomized synthetic Feed cases: PASS (100).
+- Concurrent Redis modification: PASS; exact Redis operation sequence and outputs identical.
+- PHP-side performance: small and workload-dependent; no meaningful production win demonstrated.
+- **Full MISP integration tests: not yet executed. No upstream PR.**
 
-Run GitHub Actions via `workflow_dispatch`. Results are saved as artifacts. The main branch never automatically publishes or opens PRs.
+## Workflow
+
+GitHub Actions: [research.yml](.github/workflows/research.yml), manual `workflow_dispatch`, ephemeral Redis service. No production/customer data, secrets, or private feeds. Experimental code stays in this repo; any upstream work requires separate review and staging.
+
+The older `benchmarks/redis_uuid_lookup.php` illustrates the rejected caching strategy and is **not** the active candidate.

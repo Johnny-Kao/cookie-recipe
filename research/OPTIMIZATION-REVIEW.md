@@ -1,41 +1,45 @@
-# Optimization review — 2026-11-09
+# MISP Feed correlation — strict-preservation optimization review
 
-Research repository: https://github.com/Johnny-Kao/cookie-recipe (public, independent, not a fork).
+2026-11-09. Independent research at https://github.com/Johnny-Kao/cookie-recipe. No upstream write, issue or PR.
 
-Upstream read-only baseline: MISP/MISP `app/Model/Feed.php`, commit `04fc5f8b7ccb52bb6614ca3e9ccdbfdf6585d985`, blob `1f6a9d8ab8b197a366e549333736a321348d8ed7`.
+## Current candidate: PHP-side search only
 
-## Hypothesis and candidate
+**The previous cross-source UUID Redis cache candidate is rejected for strict behavior preservation.** It skipped repeated `SMEMBERS` calls and could observe a different UUID result if the global Redis set changed between source reads. This divergence was experimentally reproduced in [run #42553649025](https://github.com/Johnny-Kao/cookie-recipe/actions/runs/42553649025).
 
-Inside `Feed::attachFeedCorrelations()`, one global `event_uuid_lookup:<hash>` Redis set can be read once for each matching source and for repeated attribute hashes. The isolated candidate changes only this inner lookup: collect source-specific hash hits in their existing order, fetch uncached unique hashes through the existing pipeline API, and rebuild the result sequence in its original order from a per-call hash lookup cache. No cross-request persistent cache is used.
+The current candidate makes **one localized change** to `Feed::attachFeedCorrelations()`:
+- Original: allocate `array_column($attributes[$attributePosition][$scope], 'id')` and use non-strict `in_array()` to detect an already-attached source.
+- Candidate: iterate existing source entries and stop at the first loosely equal ID, eliminating intermediate array allocation.
+- Redis read/write calls, their order, pipeline boundaries, input processing, source/UUID traversal and output-attachment logic remain unchanged.
+- The target upstream method is extracted from pinned `MISP/MISP` commit `04fc5f8b7ccb52bb6614ca3e9ccdbfdf6585d985`, file blob `1f6a9d8ab8b197a366e549333736a321348d8ed7`.
 
-This is a **research candidate**, not an upstream patch.
+## Tests and evidence
 
-## Verified
+Latest PASS: [GitHub Actions #42564498074](https://github.com/Johnny-Kao/cookie-recipe/actions/runs/42564498074).
 
-Run: https://github.com/Johnny-Kao/cookie-recipe/actions/runs/42553378536
+- Target method extracted from upstream and executed both ways against real Redis 7.
+- Exact `===` comparison of returned Attribute arrays and modified Event, with source and UUID ordering retained.
+- Deterministic regression cases: duplicate attributes, URL stripping, composite values, already-attached sources, numeric-string IDs, null IDs, missing IDs, empty data, disabled correlation, permission restrictions, Feed and Server scopes, 10k hit cutoff.
+- 100 deterministic randomized Feed fixtures tested.
+- Explicit mid-query Redis mutation injection; original and candidate return the same outputs **and issue the same Redis operations in the same sequence**. Injected UUID is visible to the later source.
+- No full MISP/CakePHP integration suite has been run.
 
-- Exact upstream function extracted and dynamically compiled side by side with the candidate.
-- Same synthetic Redis instance, same fixture, deep `===` comparison of full returned Attributes and modified Event.
-- Nine regression cases: multiple source matches, duplicates, permission denied, no correlatable attributes, no cached match, empty input, limit override, Server admin/non-admin, 10k hit cutoff.
-- Redis 7 with PHP Redis on GitHub Actions; no changes to upstream.
-- Extracted function measurements, **one sample per case**:
+### Performance
 
-| Hashes | Matching sources | Baseline SMEMBERS | Candidate SMEMBERS | Baseline ms | Candidate ms | Baseline peak increment (B) | Candidate peak increment (B) |
-|---:|---:|---:|---:|---:|---:|---:|---:|
-| 30 | 3 | 90 | 30 | 1.082 | 0.878 | 111224 | 113952 |
-| 100 | 5 | 500 | 100 | 3.710 | 2.870 | 502384 | 514608 |
-| 200 | 10 | 2000 | 200 | 16.571 | 12.231 | 1969840 | 1901864 |
+9 repetitions, alternating baseline/candidate execution, real Redis, synthetic scenarios designed to emphasize large pre-existing source lists and early matches:
 
-These figures do **not** establish production or statistically significant performance benefits.
+| Attributes | Previously attached sources per attribute | Baseline median ms | Candidate median ms | Improvement |
+|---:|---:|---:|---:|---:|
+| 100 | 20 | 1.388 | 1.351 | 2.7% |
+| 250 | 80 | 3.234 | 2.787 | 13.8% |
+| 400 | 120 | 4.015 | 3.675 | 8.5% |
 
-## Unresolved correctness and deployment risks
+A single separate typical-sized full-method measurement was approximately neutral. The improvement is CPU-side and workload-dependent. **Do not reuse the earlier 80–96% Redis-command reductions or 19–26% timings** as results for this candidate: those refer to the *rejected* caching experiment.
 
-1. **Concurrent Redis writes — demonstrated divergence:** Run [#42553649025](https://github.com/Johnny-Kao/cookie-recipe/actions/runs/42553649025) injects a global UUID-set change between two source queries. The baseline sees the new UUID on the later source; the candidate reuses stale data. Thus the current candidate **does change observable behavior under concurrent updates** and must not be deployed under a strict equivalence requirement. Existing cache refresh paths write/delete UUID lookup sets and need a lifecycle audit.
-2. **Memory:** The candidate retains every previously seen UUID set for the remainder of this function call. When many hashes or large sets exist, PHP memory cost can grow. No safe bounded memory policy or representative worst-case fixture has been validated yet.
-3. **Harness limits:** This is the exact target function but in a minimal host harness with synthetic stubs for CakePHP models, source retrieval and role inputs. It is not a full MISP application test, nor an exhaustive check of all input permutations.
-4. **Order:** The function's iteration order is retained and checked for static fixtures. Redis mutation between reads is explicitly tested and currently differs.
-5. **Benchmark:** One run per dimension and many synthetic all-match cases bias results toward a cache win. Real-world hit distributions and repeated measurements remain necessary.
+## Remaining gates before staging/upstream
 
-## Decision
+1. Run true MISP integration / project tests: actual models, permissions, real feed/server source shapes, other callers, PHP versions, no warnings.
+2. Test malformed/non-standard embedded source entries (including objects) if supported by the public API; current fast path is designed for MISP's nested array data model.
+3. Determine whether the measured CPU improvement is meaningful in realistic MISP workloads; small hit lists may show negligible benefit.
+4. Consider whether an even narrower change or no change is preferable given maintenance costs.
 
-**HOLD** on upstream PR. The isolated optimization is behavior-equivalent on covered static cases and promising on limited performance measurements. Next gates: audit cache refresh lifecycle and define the required consistency contract, design memory control, add randomized/realistic hit distributions and full MISP integration regression. If strict behavior under concurrent writes is required, consider a different optimization scope rather than an in-request cross-source cache. An enhancement must not silently change visible results or ACLs.
+**Status: isolated candidate passed covered behavior equivalence, including concurrent mutation. NOT yet validated by full MISP tests; NOT ready for upstream PR.**

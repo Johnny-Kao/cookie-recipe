@@ -24,6 +24,11 @@ $after = <<<'CODE'
                     $alreadyAttached = false;
                     if (isset($attributes[$attributePosition][$scope])) {
                         foreach ($attributes[$attributePosition][$scope] as $existingSource) {
+                            if (is_object($existingSource)) {
+                                // Keep array_column() semantics for unusual object-valued entries.
+                                $alreadyAttached = in_array($sourceId, array_column($attributes[$attributePosition][$scope], 'id'));
+                                break;
+                            }
                             if (is_array($existingSource) && array_key_exists('id', $existingSource) && $existingSource['id'] == $sourceId) {
                                 $alreadyAttached = true;
                                 break;

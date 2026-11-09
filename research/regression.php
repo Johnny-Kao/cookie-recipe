@@ -106,6 +106,11 @@ compareCase($r, 'existing source IDs including numeric strings and null', 'Feed'
 $manyExisting = $attrs;
 $manyExisting[0]['Feed'] = array_merge([['id'=>1, 'name'=>'early match']], array_map(static fn($id) => ['id'=>$id], range(50, 150)));
 compareCase($r, 'early match in large existing source list', 'Feed', $feedSources, $manyExisting, $data, user());
+$objectExisting = $attrs;
+$objectExisting[0]['Feed'] = [(object)['id'=>1,'name'=>'object entry'], ['id'=>2,'name'=>'array entry']];
+$csvOnly = [['Feed'=>['id'=>3,'name'=>'CSV','source_format'=>'csv']]];
+$csvFixture = [['keys'=>['example.org'],'source_ids'=>[3]]];
+compareCase($r, 'object-valued existing source fallback', 'Feed', $csvOnly, [$objectExisting[0]], $csvFixture, user());
 compareCase($r, 'feed permission denied', 'Feed', $feedSources, $attrs, $data, user(true, false));
 compareCase($r, 'feed no eligible attributes', 'Feed', $feedSources, [['type'=>'comment','value'=>'no']], $data, user());
 compareCase($r, 'feed no cache match', 'Feed', $feedSources, [['type'=>'domain','value'=>'no-match']], $data, user());
