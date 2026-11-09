@@ -86,12 +86,12 @@ function runOne($class,$feeds,$data,$rows,$admin,$delay) {
     return ['output'=>$output,'ms'=>(hrtime(true)-$t)/1e6,'mem'=>max(0,memory_get_peak_usage(false)-$startMem),
       'direct'=>$proxy->direct,'exec'=>$proxy->pipelineExec,'membership'=>$proxy->membership];
 }
-function testCase($name,$n,$sourceCount,$rate,$delay=0,$admin=true,$repeats=3) {
+function testCase($name,$n,$sourceCount,$rate,$delay=0,$admin=true,$repeats=3,$uniquePercent=70) {
     global $r;
     $feeds=[];
     for($s=1;$s<=$sourceCount;$s++)$feeds[]=['Feed'=>['id'=>$s,'name'=>'Feed '.$s,'provider'=>'lab',
       'source_format'=>'freetext','lookup_visible'=>($s%4 !==0 ? 1 : 0)]];
-    $data=makeData($n);
+    $data=makeData($n,$uniquePercent);
     $rows=[
         ['Attribute'=>['event_id'=>71,'value1'=>array_values($data)[0]['value'],'value2'=>'']],
         ['Attribute'=>['event_id'=>72,'value1'=>'irrelevant.invalid','value2'=>array_values($data)[0]['value']]],
@@ -130,6 +130,8 @@ $results=[];
 try {
     $results[]=testCase('zero-hits',15,8,0,0,true,3);
     $results[]=testCase('normal-preview-60',60,15,30,0,true,5);
+    $results[]=testCase('all-distinct-60',60,15,30,0,true,5,100);
+    $results[]=testCase('heavy-repeat-60',60,15,30,0,true,5,10);
     $results[]=testCase('admin-preview',100,15,30,0,true,5);
     $results[]=testCase('nonadmin-visibility',100,15,80,0,false,5);
     $results[]=testCase('high-hitrate',300,25,100,0,true,5);
