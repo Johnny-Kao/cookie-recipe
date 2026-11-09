@@ -25,7 +25,7 @@ $segment = substr($source, $functionStart, $functionEnd - $functionStart);
 if (substr_count($segment, $needle) !== 1) throw new RuntimeException('Source check failed');
 $updatedSegment = str_replace($needle, $replacement, $segment);
 $updated = substr($source, 0, $functionStart) . $updatedSegment . substr($source, $functionEnd);
-$updated = str_replace('class ComplexTypeTool\n', 'class ComplexTypeToolFastPath\n', $updated, $count);
+$updated = str_replace('class ComplexTypeTool' . PHP_EOL, 'class ComplexTypeToolFastPath' . PHP_EOL, $updated, $count);
 if ($count !== 1) throw new RuntimeException('Class declaration changed');
 file_put_contents(__DIR__.'/../build/ComplexTypeToolFastPath.php', $updated);
 echo "Generated isolated fast-path candidate from pinned upstream method\n";
