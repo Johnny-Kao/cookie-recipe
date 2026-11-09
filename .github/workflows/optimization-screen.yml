@@ -30,3 +30,11 @@ jobs:
           test "$(git hash-object build/CidrTool.php)" = 3aa01583e74f1cdded4f66042f3a245fab2bd8c5
           php -l research/screen_ipv6_cidr_index.php
           php research/screen_ipv6_cidr_index.php build/CidrTool.php
+      - name: Validate with pinned real datacenter IPv6 warninglist
+        run: |
+          curl --fail --location --silent --show-error --retry 3 \
+            https://raw.githubusercontent.com/MISP/misp-warninglists/f8d976e7948baacc523af1eed75896aae0462bac/lists/datacenter-ipv6/list.json \
+            -o build/real-datacenter-ipv6.json
+          test "$(git hash-object build/real-datacenter-ipv6.json)" = 542997f580077305a8868d6ad349b93cd871f22c
+          php -l research/test_ipv6_real_warninglist.php
+          php research/test_ipv6_real_warninglist.php build/real-datacenter-ipv6.json
