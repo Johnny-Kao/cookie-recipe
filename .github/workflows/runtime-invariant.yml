@@ -26,3 +26,7 @@ jobs:
         run: |
           php -l research/sighting_org_filter_runtime.php
           php research/sighting_org_filter_runtime.php build/Sighting.php
+      - name: Validate full unmodified Sighting class with framework fakes
+        run: |
+          php -l research/sighting_full_class_validation.php
+          php research/sighting_full_class_validation.php build/Sighting.php
