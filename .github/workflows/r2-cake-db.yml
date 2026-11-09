@@ -1,0 +1,86 @@
+name: MISP R2 real REST search DB correctness
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  cake-db:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    services:
+      mariadb:
+        image: mariadb:10.11
+        env:
+          MARIADB_ROOT_PASSWORD: bar
+          MARIADB_DATABASE: misp
+          MARIADB_USER: misp
+          MARIADB_PASSWORD: blah
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mariadb-admin ping -h 127.0.0.1 -uroot -pbar"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=30
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: research
+      - name: Checkout pinned MISP source (ephemeral copy)
+        run: |
+          git clone --no-checkout --filter=blob:none https://github.com/MISP/MISP.git upstream
+          cd upstream
+          git checkout 04fc5f8b7ccb52bb6614ca3e9ccdbfdf6585d985
+          test "$(git rev-parse HEAD)" = 04fc5f8b7ccb52bb6614ca3e9ccdbfdf6585d985
+          git submodule update --init --recursive --depth 1
+      - name: Configure PHP and dependencies
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mysqli, pdo_mysql, mbstring, xml, dom, simplexml, curl, zip, redis, gd, apcu
+          ini-values: memory_limit=768M, display_errors=1, error_reporting=E_ALL
+          tools: composer:v2
+      - name: Install MISP Composer dependencies
+        working-directory: upstream/app
+        run: |
+          composer config --no-plugins allow-plugins.composer/installers true
+          composer install --no-interaction --no-progress --prefer-dist
+      - name: Initialize real CakePHP and MariaDB schema
+        working-directory: upstream
+        run: |
+          mysql -h 127.0.0.1 -u misp -pblah misp < INSTALL/MYSQL.sql
+          cp app/Config/bootstrap.default.php app/Config/bootstrap.php
+          cp app/Config/core.default.php app/Config/core.php
+          cp app/Config/config.default.php app/Config/config.php
+          cp build/database.php app/Config/database.php
+          cp build/email.php app/Config/email.php
+          mkdir -p app/tmp/cache/persistent app/tmp/cache/models app/tmp/logs
+          cp ../research/research/R2DbResearchShell.php app/Console/Command/R2DbResearchShell.php
+          mysql -h 127.0.0.1 -u misp -pblah misp <<'SQL'
+          INSERT INTO organisations (id,name,date_created,date_modified,uuid,local)
+            VALUES (9101,'R2 Org A',NOW(),NOW(),'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',1),
+                   (9102,'R2 Org B',NOW(),NOW(),'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',1);
+          INSERT INTO events (id,org_id,date,info,user_id,uuid,analysis,orgc_id,sharing_group_id,threat_level_id,distribution)
+            VALUES (9101,9101,CURDATE(),'R2 search fixture',9101,'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',0,9101,0,2,0);
+          INSERT INTO attributes (id,event_id,category,type,value1,value2,uuid,sharing_group_id)
+            VALUES (9101,9101,'Network activity','ip-dst','192.0.2.101','','11111111-1111-4111-8111-111111111111',0),
+                   (9102,9101,'Network activity','ip-dst','192.0.2.102','','22222222-2222-4222-8222-222222222222',0);
+          INSERT INTO sightings (id,attribute_id,event_id,org_id,date_sighting,uuid,type)
+            VALUES (9101,9101,9101,9101,UNIX_TIMESTAMP(),'33333333-3333-4333-8333-333333333333',0),
+                   (9102,9102,9101,9102,UNIX_TIMESTAMP(),'44444444-4444-4444-8444-444444444444',0);
+          SQL
+          php -l app/Console/Command/R2DbResearchShell.php
+
+      - name: Run real CakePHP REST Search query and verify DB results
+        working-directory: upstream
+        run: |
+          app/Console/cake R2DbResearch
