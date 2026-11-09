@@ -26,6 +26,10 @@ class R2DbResearchShell extends AppShell
         $a = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
         $b = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
         $unknown = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+        $mode = isset($this->args[0]) ? $this->args[0] : 'original';
+        if (!in_array($mode, array('original', 'fixed'), true)) {
+            throw new RuntimeException('Unknown test mode');
+        }
         $cases = array(
             'control-a' => array($a),
             'control-b' => array($b),
@@ -81,6 +85,20 @@ class R2DbResearchShell extends AppShell
                     'valid-negation'=>array(9102),
                     'valid-plus-negation'=>array(9101),
                 );
+                if ($mode === 'fixed') {
+                    $expectedObserved = array_merge($expectedObserved, array(
+                        'mixed-valid-unknown'=>array(9101),
+                        'mixed-valid-integer'=>array(9101,9102),
+                        'mixed-valid-negated-unknown'=>array(9101),
+                        'numeric-only'=>array(9101),
+                        'numeric-string-only'=>array(9102),
+                        'numeric-negation'=>array(9102),
+                        'negated-unknown-only'=>array(9101,9102),
+                    ));
+                    if (in_array('Undefined variable $temp', $warnings, true)) {
+                        throw new RuntimeException('Fixed code still uses undefined temp: '.$name);
+                    }
+                }
                 if ($ids !== $expectedObserved[$name]) {
                     throw new RuntimeException('Observed R2 result changed: '.json_encode($ids).' expected '.json_encode($expectedObserved[$name]));
                 }

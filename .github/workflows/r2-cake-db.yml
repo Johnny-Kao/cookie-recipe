@@ -80,7 +80,35 @@ jobs:
           SQL
           php -l app/Console/Command/R2DbResearchShell.php
 
-      - name: Run real CakePHP REST Search query and verify DB results
+      - name: Reproduce original R2 behavior with real DB
         working-directory: upstream
         run: |
-          app/Console/cake R2DbResearch
+          app/Console/cake R2DbResearch original
+      - name: Apply research-only minimal R2 candidate
+        working-directory: upstream
+        run: |
+          python3 ../research/research/apply_r2_candidate.py
+          php -l app/Model/Sighting.php
+      - name: Verify R2 fix with real REST JSON and DB
+        working-directory: upstream
+        run: |
+          app/Console/cake R2DbResearch fixed
+      - name: Configure upstream GPG fixtures
+        working-directory: upstream
+        run: |
+          mkdir -m 700 -p .gnupg
+          gpg --batch --yes --pinentry-mode loopback --passphrase travistest --homedir "$PWD/.gnupg" --gen-key build/gpg
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('app/Config/config.php')
+          s=p.read_text()
+          old="'email'             => '',\n        'homedir'           => '',\n        'password'          => '',"
+          assert s.count(old)==1
+          new=f"'email'             => 'info@admin.test',\n        'homedir'           => '{Path.cwd()}/.gnupg',\n        'password'          => 'travistest',"
+          p.write_text(s.replace(old,new))
+          PY
+      - name: Upstream full PHP lint and PHPUnit suite
+        working-directory: upstream
+        run: |
+          ./app/Vendor/bin/parallel-lint --exclude app/Lib/cakephp/ --exclude app/Vendor/ -e php,ctp app/
+          ./app/Vendor/bin/phpunit app/Test/
