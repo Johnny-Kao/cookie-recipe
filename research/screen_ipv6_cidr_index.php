@@ -83,6 +83,27 @@ function makeQueries():array {
     return $queries;
 }
 $queries=makeQueries();
+// Explicitly exercise unusual overlaps, /0, duplicate prefixes, input host bits,
+// mixed mask spelling, and the original last-matching-netmask-group contract.
+$edgeLists = [
+    ['::/0', '2001:db8::/32', '2001:db8:1::/48', '2001:db8:1:2::/64'],
+    ['2001:db8:1:2:3:4:5:6/48', '2001:db8::/32', '2001:db8:1::/48'],
+    ['2001:db8::1/128', '2001:db8::1/128', '2001:db8::2/128'],
+    ['2001:db8::1/000', '::/0', '2001:db8::/0'],
+    ['::ffff:192.0.2.1/128', '::ffff:192.0.2.0/120', '::/96'],
+    ['2001:db8::1/127', '2001:db8::/127', '2001:db8::/126'],
+    ['::/128', '::/64', '::1/128', '::/0'],
+];
+foreach($edgeLists as $edgeId=>$list) {
+    $baselineEdge = new CidrToolOriginal($list);
+    $indexedEdge = new CidrToolIndexed($list);
+    foreach($queries as $i=>$q) {
+        $old=$baselineEdge->contains($q);
+        $new=$indexedEdge->contains($q);
+        if($old!==$new)throw new RuntimeException('edge mismatch case='.$edgeId.' index='.$i.' query='.$q);
+    }
+}
+echo 'PASS CIDR adversarial groups '.count($edgeLists).' x '.count($queries)."\\n";
 foreach([0,50,500,3000] as $size) {
     $cidrs=makeCidrs($size);
     $a=new CidrToolOriginal($cidrs);
